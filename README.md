@@ -1,4 +1,120 @@
-# 法务合同辅助初审系统 · 解析、检索与受限任务初审
+# 法务合同辅助初审系统
+
+上传一份合同，自动切分条款、检索相关法规、标出风险点，**每条结论都附带可溯源的法规原文**。
+
+面向企业法务的辅助工具：不替代人做判断，只把人从翻文档里解放出来。
+
+---
+
+## 解决什么问题
+
+法务审一份合同平均 2–3 小时，其中约 60% 的时间花在「翻法规、找历史案例」上，
+真正用于判断的不到一半。
+
+这个系统把「找依据」变成「查索引」：
+
+```
+上传合同 → 切分条款 → 逐条检索法规 → 判定风险 → 生成带出处的报告
+```
+
+- 合同自动切分成条款，位置精确到字符
+- 每条条款用 BM25 检索相关法规
+- 模型判定风险等级，**依据必须来自检索结果，不允许编造**
+- 输出 Markdown 报告，每条意见可回溯到法条原文
+
+---
+
+## 核心设计
+
+| 设计 | 为什么这么做 |
+|---|---|
+| **依据只能从候选集里选** | 防止模型编造法条。服务端校验 ID 是否在本次候选内，引文一律从数据库取，不接受模型写的引文 |
+| **四种状态分开** | `supported` / `insufficient` / `no_issue_detected` / `not_applicable`。把「没发现问题」和「没敢下结论」分开，不误导用户 |
+| **条款偏移按 code point 计** | UTF-16 下标遇到 emoji 会错位，报告里的「点击定位到原文」就废了 |
+| **规则带适用条件** | 用「违约责任」规则去查「争议解决」条款是浪费，也制造噪音。关键词不命中就不调用模型 |
+| **任务持久化 + 断点续跑** | worker 挂了重启能接着跑，已完成的单元不重复扣费 |
+
+---
+
+## 技术栈
+
+Python 3.9 · FastAPI · SQLite · SQLAlchemy · rank-bm25 · jieba · DeepSeek API · Docker Compose
+
+零前端框架：原生 HTML + JS，无 CDN、无构建步骤，内网离线可用。
+
+---
+
+## 快速开始
+
+```powershell
+cd law-review
+Copy-Item .env.docker.example .env
+
+# 编辑 .env，填两个值：
+#   JWT_SECRET=<32 字节以上随机串>
+#   DEEPSEEK_API_KEY=sk-xxx
+
+docker compose build
+docker compose up -d
+docker compose exec api python -m app.cli seed-users
+```
+
+打开 `http://localhost`，用 `reviewer01` 登录。
+
+首次使用需要导入法规，否则审查会直接「依据不足」：
+
+```powershell
+docker compose exec api python -m app.cli import-law --file samples/laws/civil_code_liability.txt --source-id civil-code-liability --name "民法典合同编：违约责任节选"
+docker compose exec api python -m app.cli import-law --file samples/laws/civil_code_termination.txt --source-id civil-code-termination --name "民法典合同编：解除与争议条款节选"
+docker compose exec api python -m app.cli enable-source --source-id civil-code-liability
+docker compose exec api python -m app.cli enable-source --source-id civil-code-termination
+docker compose restart api worker
+```
+
+上传 `samples/contract_a.txt`，发起审查，看结果页。
+
+---
+
+## 实测效果
+
+| 场景 | 结果 |
+|---|---|
+| 规范合同（contract_a） | 0 误报，6 条判「未发现问题」 |
+| 埋了 3 个坑的合同（contract_c_bad） | **3/3 全部抓到**，均带法规依据 |
+| 依据不足的条款 | 如实标注 `insufficient`，不硬编结论 |
+| 规则不适用 | 判 `not_applicable`，不浪费模型调用 |
+
+三个埋的坑：180 天账期、违约金无上限、单方解除权。
+
+---
+
+## 项目结构
+
+```text
+app/
+  main.py            FastAPI 入口
+  models.py          7 张表（SQLAlchemy）
+  api/               路由
+  services/
+    parser.py        文档解析（PDF/DOCX/TXT）
+    clause_splitter.py 条款切分，code point 对齐
+    chunker.py       法规切块
+    search.py        BM25 检索
+    validator.py     依据四层校验
+    risk_judge.py    单条款判定
+    review_worker.py 任务执行器
+    report.py        报告生成
+  static/            原生 HTML/JS 前端
+  prompts/           提示词模板（版本化）
+samples/             测试合同与法规
+tests/               自动化测试
+docker-compose.yml   api + worker + nginx
+```
+
+---
+
+<details>
+<summary><b>详细实现与开发记录</b>（点开查看完整技术细节）</summary>
 
 规则定义已扩展为10项条款规则、5项规范合同级缺失规则，本轮仅生成计划，尚未执行扩展规则的模型验收。默认审查仍使用原3项条款规则，不自动扩大调用范围。运行 `.\.venv\Scripts\python.exe -m scripts.preview_rule_plan` 可离线重建合同A计划：work/rule-plan-v4.md（含定义与关键词）及work/rule-plan-v4.json。旧缺失规则ID保留兼容，不在新计划中重复列入。
 
@@ -562,3 +678,5 @@ seed-users 创建 admin/admin、reviewer01/reviewer、reviewer02/reviewer（格�
 ```
 
 安装后，普通的 `python -m pip install -r requirements.txt` 已再次执行成功。`work/` 和 `.venv/` 均不提交 Git。
+
+</details>
