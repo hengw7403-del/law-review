@@ -1,0 +1,55 @@
+name: law-review
+x-app: &app
+  image: law-review:local
+  build: .
+  init: true
+  restart: unless-stopped
+  environment: &env
+    TZ: Asia/Shanghai
+    DATABASE_URL: sqlite:////data/law.db
+    CONTRACT_UPLOAD_DIR: /data/uploads
+    JIEBA_CACHE_DIR: /data/index
+    WORKER_HEARTBEAT_FILE: /data/worker-heartbeat.json
+    JWT_SECRET: ${JWT_SECRET:?Configure JWT_SECRET in .env.docker}
+    DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+  volumes:
+    - ./data:/data
+services:
+  api:
+    <<: *app
+    command: [api]
+    healthcheck:
+      test: [CMD, python, -m, app.container_entrypoint, health-api]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+  worker:
+    <<: *app
+    command: [worker]
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -m, app.container_entrypoint, health-worker]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+  nginx:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD-SHELL, "wget -q -O /dev/null http://127.0.0.1/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>合同列表 · 合同辅助初审</title><link rel="stylesheet" href="/style.css"><script src="/api.js" defer></script><script src="/nav.js" defer></script><script src="/contract-list.js" defer></script></head>
+<body><nav id="nav" aria-label="主导航"></nav><main><header class="page-head"><div><h1>合同列表</h1><p class="muted">上传合同，跟踪解析与初审进度。</p></div><button id="open-upload" class="primary" type="button">上传合同</button></header>
+<p id="list-message" class="notice error" role="alert" hidden></p><button id="retry-list" type="button" hidden>重新加载</button>
+<p id="loading" class="muted" role="status">正在加载合同…</p>
+<section id="empty" class="panel empty" hidden><h2>还没有合同</h2><p class="muted">点击右上角「上传合同」，开始管理你的第一份合同。</p></section>
+<div id="table-wrap" class="table-wrap" hidden><table><thead><tr><th scope="col">合同名</th><th scope="col">我方立场</th><th scope="col">解析状态</th><th scope="col">创建时间</th><th scope="col">操作</th></tr></thead><tbody id="contract-rows"></tbody></table></div>
+<p class="muted small">新上传的合同显示在最上方。</p>
+<dialog id="upload-dialog" aria-labelledby="upload-title"><div class="dialog-head"><h2 id="upload-title">上传合同</h2><button id="close-upload" type="button" aria-label="关闭上传窗口">×</button></div>
+<form id="upload-form"><p class="muted small">支持 PDF、DOCX、UTF-8 TXT，单文件不超过 20 MB。</p>
+<div class="field"><label for="contract-file">合同文件</label><input id="contract-file" name="file" type="file" accept=".pdf,.docx,.txt" required><p id="file-summary" class="file-summary muted small">尚未选择文件</p></div>
+<div class="field"><label for="contract-title">合同名称（可选）</label><input id="contract-title" name="title" maxlength="200" placeholder="留空时使用文件名"></div>
+<div class="field"><label for="contract-stance">我方立场</label><select id="contract-stance" name="stance"><option value="party_a">甲方</option><option value="party_b">乙方</option></select></div>
+<p id="upload-error" class="notice error" role="alert" hidden></p><button id="upload-submit" type="submit" class="primary">上传</button></form></dialog>
+<noscript>请启用 JavaScript 后使用本系统。</noscript></main></body></html>

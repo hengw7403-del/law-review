@@ -1,0 +1,1 @@
+"""Skeleton and schema checks."""

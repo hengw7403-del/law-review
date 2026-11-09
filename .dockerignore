@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+law.db*
+**/*.db
+**/*.db-wal
+**/*.db-shm
+work/
+data/
+.env
+.env.*
+!.env.docker.example
+.git/
+tests/
+samples/*.tmp
+*.worker.lock

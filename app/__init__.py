@@ -1,0 +1,1 @@
+"""Law review application package."""

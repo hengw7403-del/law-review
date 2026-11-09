@@ -1,0 +1,24 @@
+document.addEventListener("DOMContentLoaded", () => {
+  const nav = document.getElementById("nav");
+  if (!nav) return;
+  const brand = document.createElement("a");
+  brand.href = "/contract-list.html";
+  brand.className = "brand";
+  brand.textContent = "合同辅助初审";
+  const links = document.createElement("div");
+  links.className = "nav-links";
+  const list = document.createElement("a");
+  list.href = "/contract-list.html";
+  list.textContent = "合同列表";
+  if (location.pathname === "/contract-list.html") list.setAttribute("aria-current", "page");
+  const user = document.createElement("span");
+  user.className = "muted nav-user";
+  user.textContent = sessionStorage.getItem("username") || "";
+  const exit = document.createElement("button");
+  exit.type = "button";
+  exit.className = "nav-exit";
+  exit.textContent = "退出";
+  exit.addEventListener("click", Api.logout);
+  links.append(list, user, exit);
+  nav.append(brand, links);
+});
