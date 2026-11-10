@@ -15,6 +15,8 @@ async function loadContracts() {
   document.getElementById("retry-list").hidden = true;
   try {
     const data = await Api.request("/contracts");
+    document.getElementById('contract-total').textContent=data.contracts.length;
+    document.getElementById('reviewed-total').textContent=data.contracts.filter(c=>['completed','partial_failed'].includes(c.latest_task?.status)).length;
     const body = document.getElementById("contract-rows");
     body.replaceChildren();
     for (const contract of data.contracts) {

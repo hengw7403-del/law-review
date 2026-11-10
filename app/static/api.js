@@ -85,3 +85,16 @@ window.Api = (() => {
 if (window.location.pathname === "/" || window.location.pathname === "/index.html") {
   window.location.replace(sessionStorage.getItem("access_token") ? "/contract-list.html" : "/login.html");
 }
+
+// Presentation only: no network requests or changes to authentication/workflows.
+document.querySelectorAll('[id="loading"],#detail-loading').forEach(e=>e.classList.add('loading-dots'));
+const showMessage=Api.message;
+const toastTimers=new WeakMap();
+Api.message=function(target,text,kind='error'){
+  clearTimeout(toastTimers.get(target));
+  showMessage(target,text,kind);
+  if(!text)return;
+  // Modal messages stay within the modal's top layer.
+  if(!target.closest('dialog'))target.classList.add('toast');
+  toastTimers.set(target,setTimeout(()=>{target.hidden=true;},3000));
+};

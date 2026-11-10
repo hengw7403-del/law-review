@@ -1,13 +1,13 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>合同详情 · 合同辅助初审</title><link rel="stylesheet" href="/style.css"><script src="/api.js" defer></script><script src="/nav.js" defer></script><script src="/contract-detail.js" defer></script></head>
-<body><nav id="nav" aria-label="主导航"></nav><main><a class="back-link" href="/contract-list.html">← 返回合同列表</a>
+<body class="detail-page"><nav id="nav" aria-label="主导航"></nav><main><a class="back-link" href="/contract-list.html">← 返回合同列表</a>
 <p id="detail-error" class="notice error" role="alert" hidden></p><button id="retry-detail" type="button" hidden>重新加载</button><p id="detail-loading" class="muted" role="status">正在加载合同…</p>
-<section id="contract-panel" class="panel" hidden><h1 id="contract-name">合同详情</h1><p id="contract-created" class="muted small"></p>
+<section id="contract-panel" class="panel" hidden><h1 id="contract-name">合同详情</h1><p id="contract-created" class="muted small"></p><p id="task-status" class="review-status" role="status"></p>
 <dl class="metadata"><div><dt>我方立场</dt><dd id="info-stance">—</dd></div><div><dt>条款数</dt><dd id="info-count">—</dd></div><div><dt>解析状态</dt><dd id="info-parse">—</dd></div><div><dt>合同版本</dt><dd id="info-version">—</dd></div></dl>
 <p id="parse-error" class="notice error" role="alert" hidden></p><p id="parse-warning" class="notice info" role="status" hidden></p>
 <div class="actions"><button id="start-review" class="primary" type="button" disabled>发起审查</button><a id="reupload" class="button" href="/contract-list.html?upload=1" hidden>重新上传</a></div>
 <p id="review-scope" class="muted small">默认检查全部父条款，按违约责任、付款条件、争议解决规则的适用条件执行。</p></section>
-<section id="task-panel" class="panel" hidden aria-labelledby="task-heading"><h2 id="task-heading">审查进度</h2><p id="task-status" class="review-status" role="status"></p><progress id="task-progress" max="1" value="0" aria-label="审查进度"></progress><p id="task-counts" class="muted small"></p>
+<section id="task-panel" class="panel" hidden aria-labelledby="task-heading"><h2 id="task-heading">审查进度</h2><progress id="task-progress" max="1" value="0" aria-label="审查进度"></progress><p id="task-counts" class="muted small"></p>
 <p id="task-error" class="notice error" role="alert" hidden></p><div class="actions"><button id="retry-task" type="button" hidden>重新获取进度</button><a id="view-result" class="button primary" hidden>查看结果</a><button id="view-report" type="button" hidden>查看报告</button></div>
 <p id="report-hint" class="muted small" hidden>查看逐项结果或完整报告，请结合合同原文人工核对。</p></section>
 <section id="clauses-panel" class="panel" hidden><h2>合同条款</h2><p id="clause-error" class="notice error" role="alert" hidden></p><button id="retry-clauses" type="button" hidden>重新加载条款</button><div id="clauses"></div>

@@ -13,6 +13,13 @@ async function loadResults() {
     document.getElementById("title").textContent=data.contract.title;
     document.getElementById("metadata").textContent="我方立场："+Api.stanceLabels[data.contract.party_stance]+" · 审查时间："+Api.date(data.reviewed_at);
     document.getElementById("risk-total").textContent=(s.high+s.medium+s.low)+" 风险（已获依据支持）";
+    const distribution=document.getElementById('distribution');distribution.replaceChildren();
+    const otherCount=s.insufficient+s.no_issue+s.not_applicable+s.failed+(s.merged||0);
+    for(const [kind,count] of [['high',s.high],['medium',s.medium],['low',s.low],['other',otherCount]]){
+      const segment=element('span',undefined,'dist-'+kind);segment.style.flexGrow=count;segment.title=kind+' · '+count;distribution.append(segment);
+    }
+    document.getElementById('distribution-legend').textContent=`高 ${s.high} · 中 ${s.medium} · 低 ${s.low} · 其他 ${otherCount}（未发现问题 / 不适用 / 待核查等）`;
+    document.getElementById('metadata').append(document.createTextNode(' · '+({completed:'审查完成',partial_failed:'部分完成',running:'正在审查',queued:'排队中',failed:'审查失败'})[data.status]));
     const stats=document.getElementById("stats");stats.replaceChildren();
     for(const [key,text] of [["high","高风险"],["medium","中风险"],["low","低风险"],["insufficient","依据不足"],["no_issue","未发现问题"],["not_applicable","不适用"],["failed","失败"]]) {
       const cell=element("span",undefined,"stat-item");cell.dataset.stat=key;
@@ -24,8 +31,11 @@ async function loadResults() {
       const kind=item.check_status==="supported"?item.risk_level:"unknown";
       const card=element("article",undefined,"panel risk-card "+kind);
       const header=element("div",undefined,"page-head");header.append(element("h2",label(item)),element("span",({high:"高风险",medium:"中风险",low:"低风险"})[kind]||({failed:"检查失败",pending:"尚未完成"})[item.check_status]||"依据不足","badge risk-badge "+kind));card.append(header);
-      if(item.scope==="clause")section(card,"条款原文",item.clause_content);
-      section(card,"问题",item.description);section(card,"建议",item.suggestion);
+      card.append(element('p',item.description,'clause-content'));
+      card.append(element('p','建议：'+(item.suggestion||'（无）'),'clause-content suggestion'));
+      if(item.scope==="clause"){
+        const original=element('details',undefined,'original-clause');original.append(element('summary','查看条款原文'),element('p',item.clause_content,'clause-content'));card.append(original);
+      }
       const details=element("details");details.append(element("summary",`依据（${item.evidence.length} 条）`));
       if(!item.evidence.length)details.append(element("p","无通过校验的引用，需补充依据并人工核查。","muted"));
       for(const e of item.evidence) { const b=element("section",undefined,"clause");b.append(element("h3",[e.source_name||e.source_file,e.article_no].filter(Boolean).join(" · ")));b.append(element("p",e.content,"clause-content"));details.append(b); }
