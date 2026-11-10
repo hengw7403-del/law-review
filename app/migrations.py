@@ -27,7 +27,7 @@ def add_applicability_and_preamble(engine: Engine) -> None:
     with engine.connect() as connection:
         ddl = connection.exec_driver_sql("SELECT sql FROM sqlite_master WHERE name='review_items'").scalar_one()
         connection.commit()
-        if "not_applicable" in ddl:
+        if "not_applicable" in ddl and "'merged'" in ddl:
             return
         # llm_logs references this table: disable FK enforcement only on this
         # startup migration connection, copy atomically, then verify and restore.

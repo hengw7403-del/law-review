@@ -181,7 +181,7 @@ class ReviewItem(Base):
         Index('idx_items_review', 'review_id'),
         UniqueConstraint('review_id', 'item_key'),
         CheckConstraint("execution_status IN ('pending','done')"),
-        CheckConstraint("check_status IN ('supported','insufficient','failed','no_issue_detected','not_applicable')"),
+        CheckConstraint("check_status IN ('supported','insufficient','failed','no_issue_detected','not_applicable','merged')"),
         CheckConstraint("risk_level IN ('high','medium','low','unknown')"),
         CheckConstraint("decision IN ('pending','investigating','accepted','modified','excluded','unresolved')"),
         CheckConstraint("execution_status <> 'done' OR (check_status IS NOT NULL AND machine_result IS NOT NULL)"),

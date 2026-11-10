@@ -1,5 +1,6 @@
 const taskId = new URLSearchParams(location.search).get("id");
 const names = {liability:"违约责任",payment:"付款条件",dispute_resolution:"争议解决",payment_default:"逾期付款责任缺失",delivery_default:"交付违约责任缺失",acceptance:"验收标准",confidentiality:"保密"};
+Object.assign(names,{service_scope:"服务范围与交付物",milestones:"里程碑与进度",change_control:"需求变更机制",intellectual_property:"知识产权归属",confidentiality_data:"保密与数据处理",termination:"解除与终止"});
 function element(tag,text,className) { const e=document.createElement(tag); if(text!==undefined)e.textContent=text; if(className)e.className=className; return e; }
 function label(item) { return (item.scope==="contract"?"合同级缺失":item.clause_no||"条款 "+item.clause_seq)+" · "+(names[item.rule_id]||item.rule_id); }
 function section(host,title,text) { host.append(element("h3",title),element("p",text||"（无）","clause-content")); }
@@ -32,9 +33,9 @@ async function loadResults() {
     }
     if(!cards.children.length)cards.append(element("p","本次没有已支持风险或待核查问题。","notice info"));
     const other=document.getElementById("other");other.replaceChildren();
-    for(const [status,text] of [["no_issue_detected",`其余 ${s.no_issue} 项检查未发现问题`],["not_applicable",`${s.not_applicable} 项不适用`]]) {
+    for(const [status,text] of [["no_issue_detected",`其余 ${s.no_issue} 项检查未发现问题`],["not_applicable",`${s.not_applicable} 项不适用`],["merged",`${s.merged||0} 项已合并`]]) {
       const d=element("details",undefined,"panel");d.append(element("summary",text));
-      for(const i of data.items.filter(i=>i.check_status===status))d.append(element("p",label(i)+" —— "+(i.reason||i.description)));
+      for(const i of data.items.filter(i=>i.check_status===status))d.append(element("p",label(i)+" —— "+(status==="merged"?"已合并至 "+i.merged_into:(i.reason||i.description))));
       other.append(d);
     }
     if(!["completed","partial_failed"].includes(data.status))Api.message(document.getElementById("error"),"任务尚未正常完成，当前仅展示已保存结果。");

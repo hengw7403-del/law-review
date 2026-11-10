@@ -35,7 +35,7 @@ def generate_report(session_factory, task_id: str) -> str:
         order = {unit["item_key"]: i for i, unit in enumerate(snapshot["plan"])}
         items.sort(key=lambda item: (order.get(item.item_key, len(order)), item.item_key))
         clauses = {clause["id"]: clause for clause in snapshot["clauses"]}
-        counts = {"high": 0, "medium": 0, "low": 0, "insufficient": 0, "failed": 0, "no_issue_detected": 0, "not_applicable": 0}
+        counts = {"high": 0, "medium": 0, "low": 0, "insufficient": 0, "failed": 0, "no_issue_detected": 0, "not_applicable": 0, "merged": 0}
         for item in items:
             key = item.risk_level if item.check_status == "supported" else item.check_status
             if item.execution_status == "done" and key in counts:
@@ -100,8 +100,15 @@ def generate_report(session_factory, task_id: str) -> str:
             lines.append("")
 
         for item in items:
-            if item.clause_id is not None and item.check_status != "not_applicable":
+            if item.clause_id is not None and item.check_status not in {"not_applicable", "merged"}:
                 add_item(item)
+        lines.extend(["## 已合并检查项", "", "已合并 {} 项，不重复计入风险。".format(counts['merged']), ""])
+        for item in items:
+            if item.check_status == 'merged':
+                result = json.loads(item.machine_result)
+                lines.append('- {} → {}（保留最高等级，原始模型结果保留供审计）'.format(
+                    _inline(item.item_key), _inline(result['merged_into'])))
+        lines.append('')
         lines.extend(["## 合同级缺失", ""])
         missing = [item for item in items if item.clause_id is None]
         if not missing:

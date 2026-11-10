@@ -18,6 +18,7 @@ from app.services.risk_judge import RiskJudge, failed_result
 from app.services.search import BM25Index, TOKENIZER_VERSION
 from app.services.missing_judge import MissingJudge
 from app.services.review_rules import RULES_VERSION
+from app.services.risk_merge import merge_task_items
 from app.prompts.missing_judge import PROMPT_VERSION as MISSING_PROMPT_VERSION
 
 
@@ -167,6 +168,8 @@ class ReviewWorker:
                             LLMLog.item_id == item_id, LLMLog.error_code == "CALL_IN_PROGRESS"
                         ).values(error_code="UNKNOWN_USAGE_AFTER_UNIT_FAILURE"))
                     task = session.get(ReviewTask, task_id)
+                    session.flush()
+                    merge_task_items(session, task_id)
                     session.flush()
                     refresh_progress(session, task)
                 print(json.dumps({"event": "unit_committed", "task_id": task_id,

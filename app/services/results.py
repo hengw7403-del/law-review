@@ -10,7 +10,7 @@ def review_items(session_factory, task_id):
         if task is None: raise ReviewError('TASK_NOT_FOUND','任务不存在',404)
         snapshot=json.loads(task.input_snapshot)
         clauses={c['id']:c for c in snapshot.get('all_clauses',snapshot['clauses'])}
-        stats=dict.fromkeys(['high','medium','low','insufficient','failed','no_issue','not_applicable'],0)
+        stats=dict.fromkeys(['high','medium','low','insufficient','failed','no_issue','not_applicable','merged'],0)
         items=[]
         for row in session.execute(select(ReviewItem).where(ReviewItem.review_id==task_id)).scalars():
             result=json.loads(row.machine_result or '{}');clause=clauses.get(row.clause_id,{})
@@ -21,7 +21,8 @@ def review_items(session_factory, task_id):
                 'clause_content':clause.get('content',''),'scope':'contract' if row.clause_id is None else 'clause',
                 'rule_id':row.rule_id,'check_status':status,'risk_level':row.risk_level,
                 'description':result.get('description','尚未执行'),'reason':result.get('reason',''),
-                'suggestion':result.get('suggestion',''),'evidence':result.get('evidence',[])})
+                'suggestion':result.get('suggestion',''),'evidence':result.get('evidence',[]),
+                'merged_into':result.get('merged_into'),'merged_from':result.get('merged_from',[])})
         ranks={'supported':0,'insufficient':1,'failed':2,'pending':3,'not_applicable':4,'no_issue_detected':5}
         items.sort(key=lambda i:(ranks.get(i['check_status'],4),{'high':0,'medium':1,'low':2}.get(i['risk_level'],3),i['clause_seq'] or 0,i['rule_id']))
         return {'task_id':task.id,'status':task.status,'reviewed_at':task.finished_at or task.started_at or task.created_at,
