@@ -54,7 +54,7 @@ def stop_process_tree(process) -> None:
 
 
 def start_worker(database: Path, log_path: Path, mock: bool = True, delay: float = 0,
-                 fail_seq: Optional[int] = None):
+                 fail_seq: Optional[int] = None, pause_after: Optional[int] = None):
     environment = os.environ.copy()
     environment["DATABASE_URL"] = "sqlite:///" + database.resolve().as_posix()
     environment["PYTHONIOENCODING"] = "utf-8"
@@ -63,6 +63,8 @@ def start_worker(database: Path, log_path: Path, mock: bool = True, delay: float
         command += ["--delay", str(delay)]
         if fail_seq is not None:
             command += ["--fail-seq", str(fail_seq)]
+        if pause_after is not None:
+            command += ["--pause-after", str(pause_after)]
     else:
         command += ["run-worker", "--once", "--unit-delay", str(delay)]
     with log_path.open("w", encoding="utf-8") as log:

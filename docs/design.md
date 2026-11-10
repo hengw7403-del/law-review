@@ -509,3 +509,13 @@ Vue 上传流程：选择文件 → 调用无状态 `/parse/preview` → 展示�
 注意区分 ORM dirty、实际 UPDATE、序列化和扫描开销。旧实现的反复赋值会增加 dirty 检查，但 SQLAlchemy 可以跳过最终值相同的 UPDATE，因此“所有脏行都写库”不能作为未经测量的结论。`scripts/merge_perf_check.py` 保留旧实现，使用临时数据库对比120项（12条款×10规则），每10项合并一次，记录每次耗时、dirty和实际UPDATE行数；新版总耗时包含末尾一次校正，不通过附加sleep或增加旧版工作量制造加速比。性能验收是否达到10倍，以输出实测为准。
 
 worker 的 unit_committed 日志包含 committed_at、merge_ms（合并查询、计算与flush）和 checkpoint_ms（结果事务及独立进度事务），便于区分模型响应波动与数据库提交耗时。验收同时每500ms检查readiness；无503能证明该次运行的可用性，不能单凭一次成功运行确定历史503的唯一根因。
+
+## 三角色与服务端数据隔离
+
+admin和reviewer全量可见合同与工单；requester分别按Contract.owner_id和Ticket.requester_id过滤。合同比工单独立授权，任务、结果和报告通过关联合同判断可见性。复核人字段继续保留，但不再限制reviewer的法务视野。会话不随法务视野放开，仅创建者本人或admin可以访问；工单详情中的会话消息也遵守该限制。
+
+确认高风险工单仅reviewer/admin允许，requester固定403；猜测他人的资源ID返回404。关闭操作按工单可见性授权，同时保留已有状态约束（reviewing、needs_human不能直接归档）。管理员处理他人的会话时，候选合同和最终requester仍按会话创建者计算，避免管理员代操作改变数据归属。
+
+users角色CHECK以幂等父表重建迁移扩展。只在专用迁移连接暂时关闭外键，显式事务内复制、替换users，不预先重命名父表，避免SQLite把子表引用改到旧表名；校验外键后提交，异常回滚，最终恢复外键。原账号ID、哈希、组织与auth_version不变。
+
+`GET /dashboard/summary`由SQL按相同可见性统计合同、工单、待确认数和工单high_risk_count总和。高风险不重复统计merged项，也不混入无工单的普通审查；today_done统计上海自然日内完成且当前为done的工单。主页列表最多20项，计数仍是全量。前端AppLayout菜单与路由meta.roles仅改善体验，服务端access层是最终授权边界，修改sessionStorage不能扩大API权限。知识库与用户页面仅admin；法规导入沿用原管理员CLI流程，没有引入MCP或模型调用。

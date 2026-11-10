@@ -22,7 +22,7 @@ class User(Base):
 
     __table_args__ = (
         UniqueConstraint('username'),
-        CheckConstraint("role IN ('admin','reviewer')"),
+        CheckConstraint("role IN ('admin','reviewer','requester')"),
         CheckConstraint('active IN (0,1)'),
     )
 

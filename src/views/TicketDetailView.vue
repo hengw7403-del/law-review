@@ -20,18 +20,12 @@ let timer,
 const canOperate = computed(
   () =>
     me.value &&
-    (me.value.role === "admin" ||
-      [ticket.value?.requester_id, ticket.value?.assignee_id].includes(
-        me.value.user_id,
-      )),
+    ['admin', 'reviewer'].includes(me.value.role),
 );
 const canClose = computed(
   () =>
     me.value &&
-    (me.value.role === "admin" ||
-      [ticket.value?.assignee_id, ticket.value?.requester_id].includes(
-        me.value.user_id,
-      )),
+    (['admin', 'reviewer'].includes(me.value.role) || ticket.value?.requester_id === me.value.user_id),
 );
 async function poll() {
   clearTimeout(timer);
@@ -168,13 +162,13 @@ onUnmounted(() => {
         发现 {{ ticket.high_risk_count }} 处高风险，需要人工确认后才能关闭
       </h2>
       <p>{{ ticket.needs_human_reason }}</p>
-      <label for="confirm-note">确认备注（可选）</label
+      <template v-if="canOperate"><label for="confirm-note">确认备注（可选）</label
       ><textarea
         id="confirm-note"
         v-model="confirmationNote"
         maxlength="2000"
         rows="2"
-      ></textarea>
+      ></textarea></template>
       <div class="actions">
         <button
           v-if="canOperate && ['reviewer', 'admin'].includes(me?.role)"

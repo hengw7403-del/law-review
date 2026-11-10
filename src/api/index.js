@@ -54,6 +54,9 @@ export async function request(
 }
 const id = encodeURIComponent;
 export const api = {
+  dashboard: () => request('/dashboard/summary'),
+  users: () => request('/admin/users'),
+  knowledge: () => request('/admin/knowledge'),
   confirmTicket: (key, note = "") =>
     request(`/tickets/${id(key)}/confirm`, { method: "POST", json: { note } }),
   abandonConversation: (key) =>

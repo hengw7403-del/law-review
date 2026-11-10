@@ -64,7 +64,7 @@
 
 **刷新不丢登录**：store 从 `sessionStorage` 恢复，不依赖内存。
 
-**关键认知**：守卫只提供交互体验，**资源安全仍由后端 Bearer 和 owner/reviewer 检查保证**——不能把前端守卫当权限系统。
+**关键认知**：守卫只提供交互体验，**资源安全仍由后端 Bearer、三角色和资源可见性检查保证**。admin/reviewer全量可见，requester按合同owner_id和工单requester_id隔离；不能把前端守卫当权限系统。
 
 ---
 

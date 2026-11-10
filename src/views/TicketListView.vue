@@ -4,6 +4,8 @@ import { api } from "../api/index.js";
 import StatusBadge from "../components/StatusBadge.vue";
 import EmptyState from "../components/EmptyState.vue";
 import Toast from "../components/Toast.vue";
+import { useUserStore } from "../stores/user.js";
+const user = useUserStore();
 import { formatTime, ticketNumber, focusLabel } from "../utils/format.js";
 const tickets = ref([]),
   status = ref(""),
@@ -28,7 +30,7 @@ onMounted(load);
 <template>
   <header class="page-head">
     <div>
-      <h1>我的工单</h1>
+      <h1>{{ user.role === 'requester' ? '我的提交' : '工单' }}</h1>
       <p class="muted">自动审查进度与待人工确认的高风险工单。</p>
     </div>
     <router-link class="button primary" to="/workspace/new-ticket"

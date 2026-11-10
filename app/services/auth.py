@@ -57,7 +57,7 @@ def hash_password(password: str) -> str:
 
 
 def create_user(session_factory, username: str, role: str, password: str):
-    if role not in {"admin", "reviewer"} or not username.strip() or len(username) > 80:
+    if role not in {"admin", "reviewer", "requester"} or not username.strip() or len(username) > 80:
         raise ValueError("用户名或角色无效")
     hashed = hash_password(password)
     with session_factory.begin() as session:

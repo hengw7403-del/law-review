@@ -12,6 +12,34 @@ def add_user_org_name(engine: Engine) -> None:
             connection.exec_driver_sql("ALTER TABLE users ADD COLUMN org_name TEXT")
 
 
+def expand_user_roles(engine: Engine) -> None:
+    """Atomically rebuild the referenced parent table; preserve all IDs/FKs."""
+    from app.models import User
+    with engine.connect() as connection:
+        checks = inspect(connection).get_check_constraints("users")
+        if any("role" in c["sqltext"] and "'requester'" in c["sqltext"] for c in checks):
+            return
+        connection.commit()
+        # No parent-table rename: SQLite would rewrite references in children.
+        # Enforcement is disabled only on this startup migration connection.
+        connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        connection.commit()
+        try:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+            operations = Operations(MigrationContext.configure(connection))
+            with operations.batch_alter_table("users", copy_from=User.__table__, recreate="always"):
+                pass
+            if connection.exec_driver_sql("PRAGMA foreign_key_check").all():
+                raise RuntimeError("Role migration foreign-key validation failed")
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            connection.commit()
+
+
 def add_ticket_tables(engine: Engine) -> None:
     """Additive migration: does not rebuild any existing review table."""
     from app.models import Conversation, ConversationMessage, Ticket

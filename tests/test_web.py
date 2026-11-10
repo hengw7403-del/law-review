@@ -64,6 +64,6 @@ class NativeWebTests(unittest.TestCase):
         last = self.http.get(path + "/clauses?page=3&page_size=5", headers=self.headers["reviewer01"]).json()
         self.assertEqual((first["total"], len(first["clauses"]), len(last["clauses"])), (12, 5, 2))
         self.assertEqual([c["seq"] for c in last["clauses"]], [11, 12])
-        self.assertEqual(self.http.get(path + "/clauses", headers=self.headers["reviewer02"]).status_code, 404)
+        self.assertEqual(self.http.get(path + "/clauses", headers=self.headers["reviewer02"]).status_code, 200)
         for query in ("?page=0", "?page_size=0", "?page_size=101"):
             self.assertEqual(self.http.get(path + "/clauses" + query, headers=self.headers["reviewer01"]).status_code, 422)

@@ -65,6 +65,8 @@ app.include_router(reviews_router)
 app.include_router(auth_router)
 app.include_router(contracts_router)
 app.include_router(admin_router)
+from app.api.dashboard import router as dashboard_router
+app.include_router(dashboard_router)
 from app.api.conversations import router as conversations_router
 app.include_router(conversations_router)
 from app.api.tickets import router as tickets_router

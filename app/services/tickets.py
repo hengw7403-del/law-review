@@ -1,16 +1,16 @@
 import json,uuid
 from datetime import datetime,timezone
 from fastapi import HTTPException
-from sqlalchemy import select,or_,text
+from sqlalchemy import select,text
 from app import db
-from app.models import Ticket,Contract,User,ReviewTask
-from app.services.access import visible_contract
+from app.models import Ticket,Contract,User,ReviewTask,Conversation
+from app.services.access import visible_contract,ticket_visibility
 from app.services.conversations import history,costs
 from app.services.review_tasks import create_review,utc_now,ReviewError,task_metrics
 from app.services.review_rules import CLAUSE_RULES,MISSING_RULES
 
 def permitted(user):
-    return True if user.role=='admin' else or_(Ticket.requester_id==user.id,Ticket.assignee_id==user.id,Ticket.status=='pending')
+    return ticket_visibility(user)
 
 def visible(s,key,user):
     ticket=s.scalar(select(Ticket).where(Ticket.id==key,permitted(user)))
@@ -41,7 +41,8 @@ def listing(user,status=None):
 def detail(key,user):
     with db.SessionLocal.begin() as s:
         row=visible(s,key,user);sync(s,row);data=serialize(s,row)
-        data['messages']=history(s,row.conversation_id) if row.conversation_id and (user.role=='admin' or user.id in {row.requester_id,row.assignee_id}) else []
+        conversation=s.get(Conversation,row.conversation_id) if row.conversation_id else None
+        data['messages']=history(s,row.conversation_id) if conversation and (user.role=='admin' or user.id==conversation.user_id) else []
         conversation_cost=costs(s,row.conversation_id) if row.conversation_id else {'model_calls':0,'total_tokens':0,'duration_ms':0}
         review_cost=task_metrics(s,row.review_task_id) if row.review_task_id else {'model_calls':0,'total_tokens':0,'model_duration_ms':0}
         data['cost']={'conversation':conversation_cost,'review':review_cost,'model_calls':conversation_cost['model_calls']+review_cost['model_calls'],
@@ -51,7 +52,6 @@ def detail(key,user):
 def review(key,user):
     with db.SessionLocal() as s:
         row=visible(s,key,user)
-        if user.role!='admin' and user.id not in {row.requester_id,row.assignee_id}:raise HTTPException(404,'资源不存在')
         if row.review_task_id and row.status in {'reviewing','needs_human','done'}:return {'task_id':row.review_task_id,'status':row.status}
         if row.status!='pending':raise HTTPException(409,'工单当前不可触发审查')
         visible_contract(s,row.contract_id,user);contract_id=row.contract_id
@@ -81,6 +81,5 @@ def confirm(key,user,note=''):
 def close(key,user):
     with db.SessionLocal.begin() as s:
         s.execute(text('BEGIN IMMEDIATE'));row=visible(s,key,user);sync(s,row)
-        if user.role!='admin' and user.id not in {row.requester_id,row.assignee_id}:raise HTTPException(404,'资源不存在')
         if row.status in {'reviewing','needs_human'}:raise HTTPException(409,'审查执行中或待人工确认，暂不能关闭')
         row.status='closed';row.updated_at=utc_now();return serialize(s,row)

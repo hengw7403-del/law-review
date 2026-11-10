@@ -62,6 +62,8 @@ def init_db() -> None:
     Base.metadata.create_all(bind=engine)
     from app.migrations import add_user_org_name
     add_user_org_name(engine)
+    from app.migrations import expand_user_roles
+    expand_user_roles(engine)
     from app.migrations import allow_preview_llm_logs, add_applicability_and_preamble
     allow_preview_llm_logs(engine)
     add_applicability_and_preamble(engine)

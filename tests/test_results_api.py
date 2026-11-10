@@ -32,7 +32,7 @@ class ResultsTests(unittest.TestCase):
                 self.assertEqual(data['items'][2]['check_status'],'insufficient')
                 self.assertEqual(data['items'][-1]['check_status'],'no_issue_detected')
                 self.assertTrue(data['items'][0]['clause_content'].startswith('第一条'))
-                app.dependency_overrides[current_user]=lambda:Principal('other','other','reviewer',1)
+                app.dependency_overrides[current_user]=lambda:Principal('other','other','requester',1)
                 self.assertEqual(client.get('/reviews/'+tid+'/items').status_code,404)
                 app.dependency_overrides[current_user]=lambda:Principal('admin','admin','admin',1)
                 self.assertEqual(client.get('/reviews/'+tid+'/items').status_code,200)

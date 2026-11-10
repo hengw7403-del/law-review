@@ -5,7 +5,8 @@ from fastapi import HTTPException
 from pydantic import BaseModel,ConfigDict,StrictBool,Field
 from sqlalchemy import select,text,func
 from app import db
-from app.models import Conversation,ConversationMessage,Contract,Ticket,LLMLog
+from app.models import Conversation,ConversationMessage,Contract,Ticket,LLMLog,User
+from app.services.auth import Principal
 from app.services.access import visibility,visible_contract
 from app.services.llm import CallContext,LLMClient
 from app.services.review_tasks import utc_now
@@ -27,9 +28,14 @@ class Intent(BaseModel):
     ready: StrictBool
 
 def owned(session,key,user):
-    row=session.scalar(select(Conversation).where(Conversation.id==key,Conversation.user_id==user.id))
+    row=session.scalar(select(Conversation).where(Conversation.id==key,True if user.role=='admin' else Conversation.user_id==user.id))
     if row is None:raise HTTPException(404,'资源不存在')
     return row
+
+
+def conversation_owner(session, row):
+    owner=session.get(User,row.user_id)
+    return Principal(owner.id,owner.username,owner.role,owner.auth_version,owner.org_name)
 
 def history(session,key):
     return [{'role':m.role,'content':m.content,'created_at':m.created_at} for m in session.scalars(select(ConversationMessage).where(ConversationMessage.conversation_id==key).order_by(ConversationMessage.created_at,ConversationMessage.id))]
@@ -52,7 +58,8 @@ def read(key,user):
     with db.SessionLocal() as s:
         row=owned(s,key,user);collected=json.loads(row.collected)
         ticket=s.scalar(select(Ticket.id).where(Ticket.conversation_id==key))
-        candidates=[{'id':c.id,'title':c.title} for c in s.scalars(select(Contract).where(visibility(user),Contract.parse_status=='parsed').order_by(Contract.created_at.desc(),Contract.id.desc()).limit(10))]
+        actor=conversation_owner(s,row)
+        candidates=[{'id':c.id,'title':c.title} for c in s.scalars(select(Contract).where(visibility(actor),Contract.parse_status=='parsed').order_by(Contract.created_at.desc(),Contract.id.desc()).limit(10))]
         return {'conversation_id':key,'status':row.status,'slots':{k:collected.get(k,v) for k,v in DEFAULT.items()},'messages':history(s,key),'ticket_id':ticket,'cost':costs(s,key),'candidates':candidates}
 
 def abandon(key,user):
@@ -68,11 +75,12 @@ def send(key,user,content):
     with db.SessionLocal.begin() as s:
         s.execute(text('BEGIN IMMEDIATE'));row=owned(s,key,user)
         if row.status!='active':raise HTTPException(409,'会话已完成，请查看工单')
+        actor=conversation_owner(s,row)  # Admin acts for the owner, not as a new requester.
         collected=json.loads(row.collected);lease=collected.get('_inflight')
         if lease and time.time()-lease['time']<120:raise HTTPException(409,'上一条消息仍在处理中，请稍后重试')
         usage=costs(s,key)
         if usage['model_calls']>=5 or usage['total_tokens'] is None:raise HTTPException(409,'会话调用预算已用完或用量未知，请人工处理')
-        candidates=[{'id':c.id,'title':c.title[:100]} for c in s.scalars(select(Contract).where(visibility(user),Contract.parse_status=='parsed').order_by(Contract.created_at.desc(),Contract.id.desc()).limit(10))]
+        candidates=[{'id':c.id,'title':c.title[:100]} for c in s.scalars(select(Contract).where(visibility(actor),Contract.parse_status=='parsed').order_by(Contract.created_at.desc(),Contract.id.desc()).limit(10))]
         messages=[{'role':'system','content':SYSTEM+'\n'+json.dumps({'slots':{k:collected.get(k,v) for k,v in DEFAULT.items()},'candidates':candidates},ensure_ascii=False)}]
         messages += [{'role':m['role'],'content':m['content']} for m in history(s,key)]
         messages.append({'role':'user','content':content})
@@ -108,10 +116,10 @@ def send(key,user,content):
             s.add(ConversationMessage(id=uuid.uuid4().hex,conversation_id=key,role='user',content=content,created_at=user_time.isoformat()))
             ticket=None
             if ready:
-                contract=visible_contract(s,slots['contract_id'],user)
+                contract=visible_contract(s,slots['contract_id'],actor)
                 if contract.parse_status!='parsed':raise HTTPException(409,'合同当前不可审查')
                 from app.services.ticket_title import ticket_title
-                ticket=Ticket(id=uuid.uuid4().hex,title=ticket_title(contract),conversation_id=key,contract_id=contract.id,requester_id=user.id,focus_points=json.dumps(slots['focus_points'],ensure_ascii=False),priority=slots['priority'],raw_request='\n'.join([m['content'] for m in existing if m['role']=='user']+[content]),created_at=utc_now(),updated_at=utc_now());s.add(ticket);row.status='completed';intent.reply='工单已创建，正在自动启动审查。'
+                ticket=Ticket(id=uuid.uuid4().hex,title=ticket_title(contract),conversation_id=key,contract_id=contract.id,requester_id=actor.id,focus_points=json.dumps(slots['focus_points'],ensure_ascii=False),priority=slots['priority'],raw_request='\n'.join([m['content'] for m in existing if m['role']=='user']+[content]),created_at=utc_now(),updated_at=utc_now());s.add(ticket);row.status='completed';intent.reply='工单已创建，正在自动启动审查。'
             elif intent.ready:
                 intent.reply='请确认以上合同、关注点和优先级，确认后再创建工单。'
             assistant_id=uuid.uuid4().hex
@@ -119,7 +127,7 @@ def send(key,user,content):
             response={'reply':intent.reply,'slots':slots,'ready':ready,'candidates':candidates,'ticket':None,'cost':costs(s,key)}
         if ticket is not None:
             from app.services.tickets import review
-            try:review(ticket.id,user)
+            try:review(ticket.id,actor)
             except Exception:pass  # Ticket remains committed; its persisted error is returned below.
             with db.SessionLocal.begin() as s:
                 saved=s.get(Ticket,ticket.id)

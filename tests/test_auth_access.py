@@ -84,15 +84,18 @@ class AuthAccessTests(unittest.TestCase):
 
     def test_contract_task_report_owner_admin_and_assignment_permissions(self):
         cid = self.upload()
-        for name, expected in (("reviewer01", 200), ("reviewer02", 404), ("admin", 200)):
+        for name, expected in (("reviewer01", 200), ("reviewer02", 200), ("admin", 200)):
             self.assertEqual(self.http.get("/contracts/" + cid, headers=self.headers(name)).status_code, expected)
         listed = self.http.get("/contracts", headers=self.headers("reviewer02")).json()["contracts"]
-        self.assertNotIn(cid, [c["contract_id"] for c in listed])
-        self.assertEqual(self.http.post("/contracts/" + cid + "/review", json={}, headers=self.headers("reviewer02")).status_code, 404)
+        self.assertIn(cid, [c["contract_id"] for c in listed])  # Legal reviewers now see all contracts.
         created = self.http.post("/contracts/" + cid + "/review", headers=self.headers("reviewer01"),
                                  json={"rules": [], "missing_rules": ["delivery_default"]})
         self.assertEqual(created.status_code, 202, created.text)
         tid = created.json()["task_id"]
+        # Reviewer02 can trigger review too; an active review keeps its original creator.
+        duplicate = self.http.post("/contracts/" + cid + "/review", json={}, headers=self.headers("reviewer02"))
+        self.assertEqual(duplicate.status_code, 202)
+        self.assertEqual(duplicate.json()["task_id"], tid)
         with self.Session.begin() as session:
             task = session.get(ReviewTask, tid)
             self.assertEqual(task.created_by, self.ids["reviewer01"])
@@ -102,7 +105,7 @@ class AuthAccessTests(unittest.TestCase):
                                    machine_result=json.dumps({"has_gap": True, "gap_description": "测试缺口说明供本地验证使用。", "impact": "责任计算口径不清会增加追偿举证负担。", "suggestion": "明确责任触发条件和金额计算方式。",
                                        "evidence": [{"clause_id": c["id"]} for c in snapshot["all_clauses"]]}, ensure_ascii=False)))
             task.status, task.done_items = "completed", 1
-        for name, expected in (("reviewer01", 200), ("reviewer02", 404), ("admin", 200)):
+        for name, expected in (("reviewer01", 200), ("reviewer02", 200), ("admin", 200)):
             self.assertEqual(self.http.get("/tasks/" + tid, headers=self.headers(name)).status_code, expected)
             self.assertEqual(self.http.get("/reviews/" + tid + "/report", headers=self.headers(name)).status_code, expected)
         report = self.http.get("/reviews/" + tid + "/report", headers=self.headers("admin")).text

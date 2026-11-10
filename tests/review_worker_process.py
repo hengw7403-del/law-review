@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import time
 from pathlib import Path
 
 import httpx
@@ -19,6 +20,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--delay", type=float, default=0)
     parser.add_argument("--fail-seq", type=int)
+    parser.add_argument("--pause-after", type=int, help="Test-only checkpoint gate; wait to be killed outside all DB transactions")
     args = parser.parse_args()
     db.init_db()
 
@@ -61,8 +63,18 @@ def main() -> int:
         client = LLMClient(db.SessionLocal, sdk_client=sdk,
                            budget=PersistentTaskBudget(db.SessionLocal, task_id, snapshot["call_limit"]))
         return RiskJudge(index, db.SessionLocal, client)
+    class CheckpointWorker(ReviewWorker):
+        def _update_progress(self, task_id):
+            super()._update_progress(task_id)
+            if args.pause_after is not None:
+                from app.services.review_tasks import get_task
+                if get_task(self.session_factory, task_id)['processed_items'] >= args.pause_after:
+                    print('TEST_CHECKPOINT_PAUSED', flush=True)
+                    while True:
+                        time.sleep(.05)
+
     try:
-        ReviewWorker(db.SessionLocal, Path(db.engine.url.database).resolve().with_suffix(".worker.lock"),
+        CheckpointWorker(db.SessionLocal, Path(db.engine.url.database).resolve().with_suffix(".worker.lock"),
                      judge_factory=factory, unit_delay=args.delay).run(once=True)
     except WorkerAlreadyRunning:
         print("WORKER_ALREADY_RUNNING", flush=True)

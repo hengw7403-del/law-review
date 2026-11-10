@@ -68,9 +68,9 @@ class ReviewTests(unittest.TestCase):
     def task(self, rules=None):
         return create_review(self.Session, self.contract_id, 5, rules or ["liability"])["task_id"]
 
-    def worker(self, delay=0, fail_seq=None):
+    def worker(self, delay=0, fail_seq=None, pause_after=None):
         log = Path(self.directory.name) / ("worker-{}.log".format(len(self.processes)))
-        process = start_worker(self.path, log, delay=delay, fail_seq=fail_seq)
+        process = start_worker(self.path, log, delay=delay, fail_seq=fail_seq, pause_after=pause_after)
         self.processes.append(process)
         return process, log
 
@@ -104,7 +104,9 @@ class ReviewTests(unittest.TestCase):
 
     def test_kill_restart_skips_saved_units_and_lock_blocks_second_worker(self):
         task_id = self.task()
-        process, _ = self.worker(delay=4)
+        # Gate outside the transaction instead of assuming the second worker
+        # always starts within a four-second sleep on a loaded machine.
+        process, _ = self.worker(pause_after=2)
         state = wait_progress(self.Session, task_id, 2, process)
         self.assertEqual(state["status"], "running")
         with self.Session() as session:

@@ -685,8 +685,11 @@ seed-users 创建 admin/admin、reviewer01/reviewer、reviewer02/reviewer（格�
 - JWT 固定HS256，含 user_id、auth_version、iat、exp；每次请求从DB复核 active、auth_version，并以DB角色为准。停用账号或增加 auth_version 立即使旧token失效。
 - JWT_SECRET_KEY 可在环境/.env配置（至少32字节）；未设置时持久保存随机密钥至 `work/jwt-secret.key`，进程重启后token仍可验证。该文件和初始密码文件均在被忽略的work目录，不可提交或公开。
 - 业务接口除 /auth/login、/health/* 外均需 `Authorization: Bearer <access_token>`；未认证、无效或过期token返回401，含WWW-Authenticate头。静态页面与资源以及/docs、/redoc、/openapi.json为公开白名单，页面由sessionStorage认证状态和业务接口权限控制。未知路径不在白名单中。
-- reviewer 仅能访问 owner_id 为自己或 reviewer_id 为自己的合同；列表同样过滤。合同详情、建任务、任务状态、报告下载采用相同规则，越权ID和不存在ID统一404；admin可访问全部。
-- GET /admin/users 仅管理员，reviewer调用返回403；不返回哈希。PATCH /admin/contracts/{id}/reviewer，JSON `{reviewer_id}`，仅管理员可指定启用的reviewer作为复核人。
+- 三角色：admin / reviewer 可访问全部合同和工单；requester 仅可访问自己创建的合同和自己提交的工单。合同详情、建任务、任务状态、结果与报告采用同一合同可见性；越权ID和不存在ID统一404。
+- 工单确认仅 admin / reviewer，requester 返回403；关闭工单还须满足既有状态机（审查中、待人工确认不可关闭）。会话仅创建者本人或 admin 可读写。
+- GET /admin/users、GET /admin/knowledge 和 PATCH /admin/contracts/{id}/reviewer 仅管理员，其他角色403，不返回密码哈希。复核人字段保留，但不再限制法务的全局可见性。
+- 默认登录后进入 `/workspace` 概览；侧边栏和路由按角色渲染，前端隐藏仅是体验，服务端逐接口授权。`GET /dashboard/summary` 的统计按角色过滤；高风险总数汇总可见工单的 high_risk_count。详见 `docs/rbac-notes.md`。
+- 创建提交人：`python -m app.cli create-user --username requester01 --role requester`，密码由终端交互输入。已有账号不会自动改角色或重置密码。
 
 合同接口：GET /contracts 返回可见合同列表；POST /contracts 使用 multipart file，可附 title、stance（party_a/party_b，默认party_a）；GET /contracts/{id} 返回合同及条款。上传限制同预览，完整raw_text、独立preamble和条款同时保存，原文件保存在work/uploads（可配置CONTRACT_UPLOAD_DIR）。客户端不能指定owner_id，不会因上传自动调用模型。
 

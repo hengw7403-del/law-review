@@ -25,7 +25,7 @@ def main() -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     creator = commands.add_parser("create-user", help="交互输入密码创建账号，不接受命令行密码参数")
     creator.add_argument("--username", required=True)
-    creator.add_argument("--role", required=True, choices=["admin", "reviewer"])
+    creator.add_argument("--role", required=True, choices=["admin", "reviewer", "requester"])
     commands.add_parser("seed-users", help="交互初始化admin、reviewer01、reviewer02；已有账号跳过，不重置密码")
     importer = commands.add_parser("import-law", help="导入 UTF-8 TXT/Markdown，默认为未核对且未启用的草稿")
     importer.add_argument("--file", required=True, type=Path)

@@ -14,7 +14,7 @@ class TicketTests(ConversationTests):
             s.get(Contract,self.cid).reviewer_id=None
             s.add(User(id='second',username='second',password_hash='x',role='reviewer'))
             s.add(Ticket(id='ticket',title='t',contract_id=self.cid,requester_id=self.uid,raw_request='test'))
-        first=Principal(self.uid,'u','reviewer',1);second=Principal('second','second','reviewer',1);other=Principal('stranger','stranger','reviewer',1)
+        first=Principal(self.uid,'u','reviewer',1);second=Principal('second','second','reviewer',1);other=Principal('stranger','stranger','requester',1)
         self.assertEqual(len(tickets.listing(second,'pending')['tickets']),1)
         result=tickets.review('ticket',first)
         self.assertEqual(tickets.listing(other)['tickets'],[])
