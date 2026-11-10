@@ -671,6 +671,10 @@ GET  /reviews/{id}/report     UTF-8 Markdown 草稿（review ID 即 task ID）
 
 ## 登录、账号与权限
 
+新增 OA MCP 与 AI 助手入口 `/workspace/agent`（admin/reviewer）。模拟OA选择独立本地Python3.13运行在9000端口，主系统保持Python3.9；启动命令见 [mock-oa/README.md](mock-oa/README.md)，架构、限制、真实run与成本见 [docs/mcp-agent-notes.md](docs/mcp-agent-notes.md)。先启动OA再打开AI助手，容器通过MCP_OA_URL连接宿主OA。
+
+Agent已改用动态步数：未知规模10步，首次列表得到N份后限`min(2+3*N,40)`；每轮记录实际上限，最终返回步数、完成合同数和停止原因。当前说明见 [docs/dynamic-rounds-notes.md](docs/dynamic-rounds-notes.md)。
+
 初始化账号（密码在终端隐藏输入并确认，不接受 --password 参数，不使用用户名作默认密码）：
 
 ```powershell

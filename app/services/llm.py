@@ -126,7 +126,7 @@ class LLMClient:
             raise LLMLoggingError("模型格式错误分类写入失败") from exc
 
     def _begin_attempt(self, context: CallContext) -> None:
-        if context.review_id is None and context.purpose not in {"conversation", "ticket_intent"}:
+        if context.review_id is None and context.purpose not in {"conversation", "ticket_intent", "agent"}:
             return
         log_id = uuid.uuid4().hex
         try:

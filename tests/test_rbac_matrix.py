@@ -34,6 +34,7 @@ class RBACMatrixTests(unittest.TestCase):
         self.secret = 'rbac-tests-only-signing-key-32bytes'
         self.patches = [patch.object(db, 'engine', self.engine), patch.object(db, 'SessionLocal', self.sf),
                         patch.dict('os.environ', {'JWT_SECRET': self.secret, 'DEEPSEEK_API_KEY': '',
+                                                  'AGENT_RUN_DIR': str(Path(self.tmp.name) / 'agent-runs'),
                                                   'CONTRACT_UPLOAD_DIR': str(Path(self.tmp.name) / 'uploads')})]
         for p in self.patches: p.start()
         with self.sf.begin() as s:
@@ -157,6 +158,7 @@ class RBACMatrixTests(unittest.TestCase):
         for method,path,body in [('GET','/dashboard/summary',None),('GET','/tickets',None),('GET','/contracts',None),
                                  ('GET','/admin/users',None),('GET','/admin/knowledge',None),
                                  ('POST','/tickets/ticket1/confirm',{}),('POST','/tickets/ticket1/close',None),
+                                 ('POST','/agent/run',{'request':'list'}),('GET','/agent/runs/missing',None),
                                  ('POST','/conversations/conv1/messages',{'content':'继续'})]:
             with self.subTest(path=path):
                 self.assertEqual(self.client.request(method,path,**({'json':body} if body is not None else {})).status_code,401)

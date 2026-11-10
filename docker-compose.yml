@@ -12,6 +12,8 @@ x-app: &app
     WORKER_HEARTBEAT_FILE: /data/worker-heartbeat.json
     JWT_SECRET: ${JWT_SECRET:?Configure JWT_SECRET in .env.docker}
     DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    MCP_OA_URL: ${MCP_OA_URL:-http://host.docker.internal:9000/mcp}
+    AGENT_RUN_DIR: /data/agent-runs
   volumes:
     - ./data:/data
 services:

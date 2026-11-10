@@ -26,7 +26,7 @@ export const useUserStore = defineStore("user", () => {
     orgName.value = null;
     userId.value = "";
     username.value = "";
-    for (const key of ["access_token", "role", "username", "conversation_id"])
+    for (const key of ["access_token", "role", "username", "conversation_id", "agent_run_id"])
       sessionStorage.removeItem(key);
   }
   return { token, role, orgName, userId, username, isLoggedIn, setSession, setProfile, logout };

@@ -50,8 +50,16 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         application.state.llm_client = LLMClient(db.SessionLocal, budget=CallBudget(int(limit)) if limit else None)
         application.state.risk_judge = RiskJudge(application.state.search_index, db.SessionLocal,
                                                 application.state.llm_client)
+        try:
+            from app.services.agent import AgentManager
+            application.state.agent_manager = AgentManager()
+        except Exception:
+            logger.exception('Agent initialization failed; core review remains available')
+            application.state.agent_manager = None
         yield
     finally:
+        if getattr(application.state, 'agent_manager', None):
+            application.state.agent_manager.stop.set()
         if hasattr(application.state, "llm_client"):
             application.state.llm_client.close()
         db.engine.dispose()
@@ -71,6 +79,8 @@ from app.api.conversations import router as conversations_router
 app.include_router(conversations_router)
 from app.api.tickets import router as tickets_router
 app.include_router(tickets_router)
+from app.api.agent import router as agent_router
+app.include_router(agent_router)
 
 
 @app.middleware("http")

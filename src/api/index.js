@@ -54,6 +54,8 @@ export async function request(
 }
 const id = encodeURIComponent;
 export const api = {
+  startAgent: (requestText) => request('/agent/run', { method: 'POST', json: { request: requestText } }),
+  agentRun: (key) => request(`/agent/runs/${id(key)}`),
   dashboard: () => request('/dashboard/summary'),
   users: () => request('/admin/users'),
   knowledge: () => request('/admin/knowledge'),

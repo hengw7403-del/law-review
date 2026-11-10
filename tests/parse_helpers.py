@@ -76,6 +76,7 @@ class PreviewServer:
         environment = os.environ.copy()
         environment["DATABASE_URL"] = "sqlite:///" + self.database.as_posix()
         environment["PYTHONUTF8"] = "1"
+        environment["AGENT_RUN_DIR"] = str(Path(self.directory.name) / "agent-runs")
         if env_overrides:
             environment.update(env_overrides)
         self.process = subprocess.Popen(

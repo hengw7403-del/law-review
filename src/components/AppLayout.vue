@@ -13,6 +13,7 @@ const menus = [
   { label: '工单', path: '/workspace/tickets', roles: ['admin', 'reviewer'] },
   { label: '我的提交', path: '/workspace/tickets', roles: ['requester'] },
   { label: '合同', path: '/workspace/contracts', roles: ['admin', 'reviewer', 'requester'] },
+  { label: 'AI 助手', path: '/workspace/agent', roles: ['admin', 'reviewer'] },
   { label: '知识库', path: '/workspace/knowledge', roles: ['admin'] },
   { label: '用户', path: '/workspace/admin/users', roles: ['admin'] },
 ];

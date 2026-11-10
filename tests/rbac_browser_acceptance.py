@@ -46,7 +46,7 @@ def main():
             page.screenshot(path=str(out/'02-requester-mobile.png'),full_page=True);context.close();checks.append('requester菜单、主页、隔离、403、路由守卫、375px')
             for uid,number in [('reviewer01',1),('reviewer02',2)]:
                 context,page=login(uid)
-                expect(page.locator('.sidebar nav a')).to_have_text(['概览','工单','合同'])
+                expect(page.locator('.sidebar nav a')).to_have_text(['概览','工单','合同','AI 助手'])
                 expect(page.get_by_role('heading',name='待你处理',exact=False)).to_be_visible()
                 if number==1:page.screenshot(path=str(out/'03-reviewer-home.png'))
                 page.goto(base+'/workspace/tickets');expect(page.locator('main .ticket-card')).to_have_count(2)
@@ -55,7 +55,7 @@ def main():
                 page.goto(base+'/workspace/admin/users');page.wait_for_url(base+'/workspace');context.close()
             checks.append('两名reviewer均可看全部工单并确认非本人needs_human；拒绝管理员页面')
             context,page=login('admin')
-            expect(page.locator('.sidebar nav a')).to_have_text(['概览','工单','合同','知识库','用户'])
+            expect(page.locator('.sidebar nav a')).to_have_text(['概览','工单','合同','AI 助手','知识库','用户'])
             expect(page.locator('.dashboard-stats strong')).to_have_text(['2','2','0','3'])
             expect(page.get_by_role('heading',name='最近活动',exact=True)).to_be_visible()
             page.screenshot(path=str(out/'04-admin-home.png'))

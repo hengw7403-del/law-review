@@ -5,7 +5,7 @@ const ALL = ['admin', 'reviewer', 'requester'];
 
 export function safeRedirect(value) {
   return typeof value === "string" &&
-    /^\/workspace(?:$|\/$|\?|\/(contracts|results|reports|tickets|new-ticket|knowledge-help|knowledge|admin\/users)(\/|\?|$))/.test(
+    /^\/workspace(?:$|\/$|\?|\/(contracts|results|reports|tickets|new-ticket|knowledge-help|knowledge|agent|admin\/users)(\/|\?|$))/.test(
       value,
     )
     ? value
@@ -26,6 +26,7 @@ const router = createRouter({
       component: AppLayout,
       meta: { roles: ALL },
       children: [
+        { path: 'agent', name: 'agent', component: () => import('../views/AgentView.vue'), meta: { roles: ['admin', 'reviewer'] } },
         {
           path: "knowledge-help",
           name: "knowledge-help",
