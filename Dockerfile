@@ -1,3 +1,11 @@
+FROM node:22-slim AS web-build
+WORKDIR /web
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY index.html vite.config.js ./
+COPY src ./src
+RUN npm run build
+
 FROM python:3.9-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 TZ=Asia/Shanghai
 WORKDIR /app
@@ -11,6 +19,7 @@ COPY requirements.txt constraints-py39.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY --chown=app:app app ./app
 COPY --chown=app:app samples ./samples
+COPY --from=web-build --chown=app:app /web/dist ./dist
 USER 10001:10001
 ENTRYPOINT ["python", "-m", "app.container_entrypoint"]
 CMD ["api"]

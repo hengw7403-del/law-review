@@ -15,3 +15,5 @@ data/
 tests/
 samples/*.tmp
 *.worker.lock
+node_modules/
+dist/

@@ -22,3 +22,5 @@ tmp*
 jieba.cache
 *.cache
 
+node_modules/
+dist/

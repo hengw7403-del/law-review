@@ -1,5 +1,11 @@
 # 法务合同辅助初审系统
 
+## Vue工作台
+
+新前端位于src/：Vite + Vue 3 Composition API + Router 4 history + Pinia，仅用户会话入store，fetch统一请求，零UI库。运行`npm ci`、`npm run build`生成dist，然后启动FastAPI，打开`http://127.0.0.1:8000/workspace/contracts`；开发可另开`npm run dev`（5173代理API到8000）。旧.html工作台仍保留兼容。history fallback只作用于/workspace页面，不覆盖业务API和缺失资源。
+
+讲解见[docs/frontend-notes.md](docs/frontend-notes.md)，目录树见[docs/frontend-tree.md](docs/frontend-tree.md)，完整结果页代码见[docs/frontend-example.md](docs/frontend-example.md)。浏览器验收：`python -m tests.vue_browser_acceptance`，使用临时数据库副本、无模型调用。
+
 条款级检查只评价本条已写出的安排，缺少约定交合同级检查。worker将同条款同风险的重复supported项标为merged，保留原始模型输出，报告与结果页不重复计数。启动时幂等迁移旧库状态约束；真实样本验收见work/written-terms-acceptance.md。
 
 上传一份合同，自动切分条款、检索相关法规、标出风险点，**每条结论都附带可溯源的法规原文**。

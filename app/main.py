@@ -10,7 +10,7 @@ import json
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -31,6 +31,7 @@ from app.services.auth import authenticate_header, signing_key
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+DIST_DIR = Path(__file__).resolve().parent.parent / "dist"
 PUBLIC_PATHS = {"/", "/index.html", "/login.html", "/contract-list.html", "/contract-detail.html",
                 "/result.html", "/report.html", "/result.js", "/report.js", "/markdown.js",
                 "/style.css", "/api.js", "/nav.js", "/login.js", "/contract-list.js", "/contract-detail.js",
@@ -68,7 +69,9 @@ app.include_router(admin_router)
 
 @app.middleware("http")
 async def authenticate_all_routes(request: Request, call_next):
-    if request.url.path not in PUBLIC_PATHS and not request.url.path.startswith("/health/"):
+    spa_asset = request.method in {"GET", "HEAD"} and (
+        request.url.path == "/workspace" or request.url.path.startswith(("/workspace/", "/assets/")))
+    if not spa_asset and request.url.path not in PUBLIC_PATHS and not request.url.path.startswith("/health/"):
         try:
             request.state.user = await run_in_threadpool(authenticate_header, request.headers.get("Authorization"))
         except HTTPException as error:
@@ -113,5 +116,19 @@ def health_ready() -> Union[Dict[str, str], JSONResponse]:
     return {"status": "ok"}
 
 
-# Mount last: API routes retain precedence over the root static application.
+@app.get("/", include_in_schema=False)
+def web_entry():
+    return FileResponse(DIST_DIR / "index.html" if (DIST_DIR / "index.html").is_file() else STATIC_DIR / "index.html")
+
+
+@app.get("/workspace", include_in_schema=False)
+@app.get("/workspace/{path:path}", include_in_schema=False)
+def spa_entry(path: str = ""):
+    if not (DIST_DIR / "index.html").is_file():
+        raise HTTPException(503, "前端尚未构建，请执行 npm ci 和 npm run build")
+    return FileResponse(DIST_DIR / "index.html", headers={"Cache-Control": "no-store"})
+
+
+app.mount("/assets", StaticFiles(directory=str(DIST_DIR / "assets"), check_dir=False), name="spa-assets")
+# Legacy HTML stays available; API routes retain precedence.
 app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="web")

@@ -1,0 +1,18 @@
+:root {
+  --bg: #f8f9fb;
+  --surface: #fff;
+  --border: #e5e7eb;
+  --text: #111827;
+  --text-mute: #6b7280;
+  --primary: #1e40af;
+  --danger: #b91c1c;
+  --warn: #b45309;
+  --info: #4b5563;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --radius: 8px;
+}
