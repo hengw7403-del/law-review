@@ -5,6 +5,8 @@ export const useUserStore = defineStore("user", () => {
   // Session persistence is owned by the store, never individual views.
   const token = ref(sessionStorage.getItem("access_token") || "");
   const role = ref(sessionStorage.getItem("role") || "");
+  const orgName = ref(null);
+  function setProfile(profile) { orgName.value = profile.org_name || null; }
   const isLoggedIn = computed(() => Boolean(token.value));
   function setSession(session) {
     token.value = session.access_token;
@@ -15,8 +17,9 @@ export const useUserStore = defineStore("user", () => {
   function logout() {
     token.value = "";
     role.value = "";
-    for (const key of ["access_token", "role", "username"])
+    orgName.value = null;
+    for (const key of ["access_token", "role", "username", "conversation_id"])
       sessionStorage.removeItem(key);
   }
-  return { token, role, isLoggedIn, setSession, logout };
+  return { token, role, orgName, isLoggedIn, setSession, setProfile, logout };
 });

@@ -78,7 +78,7 @@ class HealthTests(unittest.TestCase):
                     self.assertEqual(response.status, 200)
                     self.assertEqual(json.load(response), {"status": "ok"})
 
-    def test_startup_creates_exactly_seven_empty_tables(self) -> None:
+    def test_startup_creates_exactly_ten_empty_tables(self) -> None:
         self.assertTrue(self.database.is_file())
         with sqlite3.connect(str(self.database)) as connection:
             names = {row[0] for row in connection.execute(
@@ -87,6 +87,7 @@ class HealthTests(unittest.TestCase):
             self.assertEqual(names, {
                 "users", "contracts", "clauses", "knowledge_chunks",
                 "review_tasks", "review_items", "llm_logs",
+                "conversations", "conversation_messages", "tickets",
             })
             for table in names:
                 self.assertEqual(connection.execute(

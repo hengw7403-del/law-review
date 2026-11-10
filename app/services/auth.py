@@ -26,6 +26,7 @@ class Principal:
     username: str
     role: str
     auth_version: int
+    org_name: Optional[str] = None
 
 
 def signing_key() -> str:
@@ -68,7 +69,17 @@ def create_user(session_factory, username: str, role: str, password: str):
 
 
 def public_user(user):
-    return {"user_id": user.id, "username": user.username, "role": user.role}
+    return {"user_id": user.id, "username": user.username, "role": user.role,
+            "org_name": user.org_name}
+
+
+def update_org(session_factory, user, org_name):
+    with session_factory.begin() as session:
+        row = session.get(User, user.id)
+        if row is None:
+            raise HTTPException(401, "未认证或登录已失效")
+        row.org_name = org_name.strip() or None if org_name is not None else None
+        return public_user(row)
 
 
 def login(session_factory, username: str, password: str):
@@ -102,7 +113,7 @@ def authenticate_header(header: Optional[str]) -> Principal:
             user = session.get(User, uid)
             if not user or user.active != 1 or user.auth_version != version:
                 raise error
-            return Principal(user.id, user.username, user.role, user.auth_version)
+            return Principal(user.id, user.username, user.role, user.auth_version, user.org_name)
     except (JWTError, ValueError, TypeError):
         raise error
 

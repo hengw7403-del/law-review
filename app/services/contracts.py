@@ -11,6 +11,7 @@ from app.models import Clause, Contract
 from app.services.clause_splitter import split_document
 from app.services.parse_quality import assess_quality
 from app.services.parser import ParseError, display_filename, parse_document
+from app.services.party_parser import party_detection
 
 
 def create_contract(session_factory, user, filename, data, stance, title=None):
@@ -43,4 +44,5 @@ def create_contract(session_factory, user, filename, data, stance, title=None):
     except Exception:
         stored.unlink(missing_ok=True)
         raise
-    return {"contract_id": cid, "owner_id": user.id, "clause_count": len(document["clauses"]), "warnings": warnings}
+    return {"contract_id": cid, "owner_id": user.id, "clause_count": len(document["clauses"]), "warnings": warnings,
+            **party_detection(text, user.org_name)}

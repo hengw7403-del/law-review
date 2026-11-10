@@ -1,4 +1,5 @@
 <script setup>
+import { formatTime } from "../utils/format.js";
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../api/index.js";
@@ -11,10 +12,25 @@ const contracts = ref([]),
   uploadOpen = ref(false),
   file = ref(null),
   title = ref(""),
-  stance = ref("party_a"),
+  stance = ref(""),
+  preview = ref(null),
   uploading = ref(false),
   submitting = ref("");
 const router = useRouter();
+function selectFile(event) {
+  file.value = event.target.files[0] || null;
+  preview.value = null;
+  stance.value = "";
+  error.value = "";
+}
+function openUpload() {
+  file.value = null;
+  title.value = "";
+  preview.value = null;
+  stance.value = "";
+  error.value = "";
+  uploadOpen.value = true;
+}
 const reviewed = computed(
   () =>
     contracts.value.filter((c) =>
@@ -47,7 +63,16 @@ async function upload() {
   try {
     const body = new FormData();
     body.append("file", file.value);
-    body.append("stance", stance.value);
+    if (!preview.value) {
+      preview.value = await api.preview(body);
+      stance.value = preview.value.suggested_stance || "";
+      return;
+    }
+    if (!["party_a", "party_b"].includes(stance.value)) {
+      error.value = "请选择我方立场";
+      return;
+    }
+    body.append("party_stance", stance.value);
     if (title.value.trim()) body.append("title", title.value.trim());
     await api.upload(body);
     uploadOpen.value = false;
@@ -84,7 +109,7 @@ onMounted(load);
       <h1>合同列表</h1>
       <p class="muted">上传合同，跟踪解析与初审进度。</p>
     </div>
-    <button class="primary" @click="uploadOpen = true">上传合同</button>
+    <button class="primary" @click="openUpload">上传合同</button>
   </header>
   <div class="stats">
     <div>
@@ -113,7 +138,7 @@ onMounted(load);
       }}</span>
     </div>
     <StatusBadge :status="contract.parse_status" /><small>{{
-      contract.created_at
+      formatTime(contract.created_at)
     }}</small>
     <div class="actions">
       <router-link
@@ -154,19 +179,30 @@ onMounted(load);
           type="file"
           accept=".pdf,.docx,.txt"
           required
-          @change="file = $event.target.files[0]"
+          :disabled="uploading"
+          @change="selectFile"
         />
         <p v-if="file" class="muted">
           {{ file.name }} · {{ (file.size / 1024 / 1024).toFixed(2) }} MB
         </p>
         <label for="title">合同名称（可选）</label
-        ><input id="title" v-model="title" maxlength="200" /><label for="stance"
-          >我方立场</label
-        ><select id="stance" v-model="stance">
-          <option value="party_a">甲方</option>
-          <option value="party_b">乙方</option></select
-        ><button class="primary" :disabled="uploading">
-          {{ uploading ? "正在上传并解析…" : "上传" }}
+        ><input id="title" v-model="title" maxlength="200" :disabled="uploading" />
+        <section v-if="preview" class="party-preview" aria-live="polite">
+          <h3>检测到合同当事方</h3>
+          <template v-if="preview.detected_parties.party_a_name || preview.detected_parties.party_b_name">
+            <p>甲方　{{ preview.detected_parties.party_a_name || "未识别" }}</p>
+            <p>乙方　{{ preview.detected_parties.party_b_name || "未识别" }}</p>
+          </template>
+          <p v-else class="muted">未能识别合同当事方，请手动选择</p>
+          <fieldset :disabled="uploading">
+            <legend>我方立场</legend>
+            <label class="radio-option"><input v-model="stance" type="radio" name="stance" value="party_a" required />甲方<span v-if="preview.suggested_stance === 'party_a'" class="muted">（匹配到你的组织）</span></label>
+            <label class="radio-option"><input v-model="stance" type="radio" name="stance" value="party_b" required />乙方<span v-if="preview.suggested_stance === 'party_b'" class="muted">（匹配到你的组织）</span></label>
+          </fieldset>
+          <p class="muted">{{ preview.suggested_stance ? "如果识别错了，可以手动改。请确认我方立场后入库。" : "请选择我方立场" }}</p>
+        </section>
+        <button class="primary" :disabled="uploading || (preview && !stance)">
+          {{ uploading ? "正在处理…" : preview ? "确认立场并上传" : "解析并识别当事方" }}
         </button>
       </form>
       <p v-if="error" class="notice error">{{ error }}</p>

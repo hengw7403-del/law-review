@@ -1,6 +1,11 @@
 <script setup>
 defineProps({ status: String });
 const labels = {
+  pending: "待启动",
+  needs_human: "待人工确认",
+  reviewing: "审查中",
+  done: "已完成",
+  closed: "已关闭",
   parsed: "解析成功",
   parse_failed: "解析失败",
   uploaded: "等待解析",

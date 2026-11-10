@@ -4,7 +4,9 @@ import AppShell from "../components/AppShell.vue";
 
 export function safeRedirect(value) {
   return typeof value === "string" &&
-    /^\/workspace\/(contracts|results|reports)(\/|\?|$)/.test(value)
+    /^\/workspace\/(contracts|results|reports|tickets|new-ticket|knowledge-help)(\/|\?|$)/.test(
+      value,
+    )
     ? value
     : "/workspace/contracts";
 }
@@ -22,6 +24,26 @@ const router = createRouter({
       path: "/workspace",
       component: AppShell,
       children: [
+        {
+          path: "knowledge-help",
+          name: "knowledge-help",
+          component: () => import("../views/KnowledgeHelpView.vue"),
+        },
+        {
+          path: "new-ticket",
+          name: "new-ticket",
+          component: () => import("../views/NewTicketView.vue"),
+        },
+        {
+          path: "tickets",
+          name: "tickets",
+          component: () => import("../views/TicketListView.vue"),
+        },
+        {
+          path: "tickets/:id",
+          name: "ticket",
+          component: () => import("../views/TicketDetailView.vue"),
+        },
         { path: "", redirect: "/workspace/contracts" },
         {
           path: "contracts",

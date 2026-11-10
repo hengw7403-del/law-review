@@ -1,7 +1,7 @@
-"""Seven declarative models matching v6 section 9; no business logic."""
+"""Review skeleton and additive conversation/ticket models."""
 
 from sqlalchemy import (
-    CheckConstraint, Column, ForeignKey, Index, Integer, Text,
+    CheckConstraint, Column, ForeignKey, Index, Integer, Text, DateTime,
     UniqueConstraint, text,
 )
 
@@ -13,6 +13,7 @@ class User(Base):
 
     id = Column(Text, primary_key=True, nullable=False)
     username = Column(Text, nullable=False)
+    org_name = Column(Text, nullable=True)
     password_hash = Column(Text, nullable=False)
     role = Column(Text, nullable=False)
     active = Column(Integer, nullable=False, server_default=text('1'))
@@ -207,4 +208,59 @@ class LLMLog(Base):
 
     __table_args__ = (
         Index('idx_logs_review', 'review_id', 'created_at'),
+    )
+
+
+class Conversation(Base):
+    __tablename__ = 'conversations'
+    id = Column(Text, primary_key=True, nullable=False)
+    user_id = Column(Text, ForeignKey('users.id', ondelete='RESTRICT'), nullable=False)
+    status = Column(Text, nullable=False, server_default=text("'active'"))
+    collected = Column(Text, nullable=False, server_default=text("'{}'"))
+    created_at = Column(Text, nullable=False, server_default=text('CURRENT_TIMESTAMP'))
+    updated_at = Column(Text, nullable=False, server_default=text('CURRENT_TIMESTAMP'))
+    __table_args__ = (
+        CheckConstraint("status IN ('active','completed','abandoned')"),
+        CheckConstraint("json_valid(collected) AND json_type(collected)='object'"),
+        Index('uq_user_active_conversation', 'user_id', unique=True, sqlite_where=text("status='active'")),
+    )
+
+
+class ConversationMessage(Base):
+    __tablename__ = 'conversation_messages'
+    id = Column(Text, primary_key=True, nullable=False)
+    conversation_id = Column(Text, ForeignKey('conversations.id', ondelete='CASCADE'), nullable=False)
+    role = Column(Text, nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(Text, nullable=False, server_default=text('CURRENT_TIMESTAMP'))
+    __table_args__ = (CheckConstraint("role IN ('user','assistant')"), Index('idx_conversation_history','conversation_id','created_at'))
+
+
+class Ticket(Base):
+    __tablename__ = 'tickets'
+    id = Column(Text, primary_key=True, nullable=False)
+    title = Column(Text, nullable=False)
+    conversation_id = Column(Text, ForeignKey('conversations.id', ondelete='SET NULL'), nullable=True, unique=True)
+    contract_id = Column(Text, ForeignKey('contracts.id', ondelete='RESTRICT'), nullable=False)
+    requester_id = Column(Text, ForeignKey('users.id', ondelete='RESTRICT'), nullable=False)
+    assignee_id = Column(Text, ForeignKey('users.id', ondelete='RESTRICT'), nullable=True)
+    status = Column(Text, nullable=False, server_default=text("'pending'"))
+    priority = Column(Text, nullable=False, server_default=text("'normal'"))
+    focus_points = Column(Text, nullable=False, server_default=text("'[]'"))
+    raw_request = Column(Text, nullable=False)
+    review_task_id = Column(Text, ForeignKey('review_tasks.id', ondelete='RESTRICT'), nullable=True)
+    high_risk_count = Column(Integer, nullable=False, server_default=text('0'))
+    needs_human_reason = Column(Text, nullable=True)
+    confirmed_by = Column(Text, ForeignKey('users.id', ondelete='RESTRICT'), nullable=True)
+    confirmed_at = Column(DateTime(timezone=True), nullable=True)
+    confirmation_note = Column(Text, nullable=True)
+    review_error = Column(Text, nullable=True)
+    created_at = Column(Text, nullable=False, server_default=text('CURRENT_TIMESTAMP'))
+    updated_at = Column(Text, nullable=False, server_default=text('CURRENT_TIMESTAMP'))
+    __table_args__ = (
+        CheckConstraint("status IN ('pending','reviewing','needs_human','done','closed')"),
+        CheckConstraint("priority IN ('low','normal','urgent')"),
+        CheckConstraint("json_valid(focus_points) AND json_type(focus_points)='array'"),
+        CheckConstraint('high_risk_count >= 0'),
+        Index('idx_ticket_queue','status','created_at'),
     )

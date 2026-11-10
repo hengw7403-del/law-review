@@ -16,6 +16,8 @@ def initialize():
     signing_key()  # Fail before serving if configured signing secret is invalid.
     db.init_db()
     db.check_database_ready()
+    from app.services.bootstrap_laws import bootstrap_laws
+    bootstrap_laws(db.engine,Path(__file__).resolve().parents[1]/'samples/laws')
 
 
 def worker():

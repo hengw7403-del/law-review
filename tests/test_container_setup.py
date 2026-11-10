@@ -30,7 +30,7 @@ class ContainerSetupTests(unittest.TestCase):
         ignored=(ROOT/'.dockerignore').read_text(encoding='utf-8')
         for item in ['.venv/','work/','law.db','data/','.env','samples/*.tmp']:self.assertIn(item,ignored)
 
-    def test_startup_initializes_seven_tables_idempotently_and_worker_probe(self):
+    def test_startup_initializes_ten_tables_idempotently_and_worker_probe(self):
         with tempfile.TemporaryDirectory() as d:
             directory=Path(d);engine=db.create_db_engine('sqlite:///'+(directory/'law.db').as_posix())
             env={'JWT_SECRET':'x'*64,'CONTRACT_UPLOAD_DIR':str(directory/'uploads'),'JIEBA_CACHE_DIR':str(directory/'index'),
@@ -40,7 +40,7 @@ class ContainerSetupTests(unittest.TestCase):
                     initialize();initialize()
                     self.assertEqual(signing_key(),'x'*64)
                     with engine.connect() as c:
-                        self.assertEqual(c.exec_driver_sql("SELECT count(*) FROM sqlite_master WHERE type='table'").scalar_one(),7)
+                        self.assertEqual(c.exec_driver_sql("SELECT count(*) FROM sqlite_master WHERE type='table'").scalar_one(),10)
                         self.assertEqual(c.exec_driver_sql('SELECT count(*) FROM llm_logs').scalar_one(),0)
                     (directory/'heartbeat.json').write_text(json.dumps({'time':time.time(),'pid':123}),encoding='utf-8')
                     with patch('sys.argv',['entrypoint','health-worker']):self.assertEqual(main(),0)

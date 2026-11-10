@@ -7,7 +7,7 @@ import uuid
 
 from sqlalchemy import func, select, text
 
-from app.models import Clause, Contract, KnowledgeChunk, LLMLog, ReviewItem, ReviewTask
+from app.models import Clause, Contract, KnowledgeChunk, LLMLog, ReviewItem, ReviewTask, Ticket
 from app.prompts.risk_judge import PROMPT_VERSION
 from app.services.llm import MODEL
 from app.services.review_planner import build_check_plan, normalize_rules
@@ -28,7 +28,7 @@ def utc_now() -> str:
 
 def create_review(session_factory, contract_id: str, max_clauses: Optional[int] = None,
                   rules: Optional[Sequence[str]] = None, missing_rules: Optional[Sequence[str]] = None,
-                  created_by: Optional[str] = None) -> Dict[str, Any]:
+                  created_by: Optional[str] = None, _on_created=None) -> Dict[str, Any]:
     selected_rules = normalize_rules(rules) if rules else ([] if rules == [] else ["liability", "payment", "dispute_resolution"])
     missing_rules = list(missing_rules or [])
     # Validate limits even when a duplicate is submitted.
@@ -92,13 +92,17 @@ def create_review(session_factory, contract_id: str, max_clauses: Optional[int] 
                                total_items=len(plan) + len(skipped), created_by=created_by or contract.owner_id,
                                created_at=utc_now(), updated_at=utc_now()))
         contract.locked_at = contract.locked_at or utc_now()
+        if _on_created is not None:
+            session.flush()
+            _on_created(session, task_id)
         return {"task_id": task_id, "deduplicated": False}
 
 
 def refresh_progress(session, task: ReviewTask) -> None:
     rows = session.execute(select(ReviewItem.execution_status, ReviewItem.check_status).where(
         ReviewItem.review_id == task.id)).all()
-    task.done_items = sum(execution == "done" and status not in {"failed", "not_applicable"} for execution, status in rows)
+    linked = session.scalar(select(Ticket.id).where(Ticket.review_task_id==task.id).limit(1)) is not None
+    task.done_items = sum(execution == "done" for execution, status in rows) if linked else sum(execution == "done" and status not in {"failed", "not_applicable"} for execution, status in rows)
     task.failed_items = sum(execution == "done" and status == "failed" for execution, status in rows)
     task.updated_at = utc_now()
 
@@ -138,13 +142,21 @@ def get_task(session_factory, task_id: str) -> Dict[str, Any]:
             ReviewItem.review_id == task_id, ReviewItem.check_status == "not_applicable")).scalars())
         skipped = len(na_keys)
         model_na = sum(key in planned_keys for key in na_keys)
-        processed = task.done_items + task.failed_items + skipped
+        done_rows=session.execute(select(ReviewItem.item_key,ReviewItem.check_status).where(ReviewItem.review_id==task_id,ReviewItem.execution_status=='done')).all()
+        processed = len(done_rows)
+        successful=sum(status not in {'failed','not_applicable','merged'} for _,status in done_rows)
+        linked=session.scalar(select(Ticket.id).where(Ticket.review_task_id==task_id).limit(1)) is not None
+        from app.services.review_quality import all_clauses_insufficient
         return {"task_id": task.id, "contract_id": task.contract_id, "status": task.status,
-                "stage": task.stage, "total_items": task.total_items, "done_items": task.done_items,
+                "stage": task.stage, "total_items": task.total_items, "done_items": processed if linked else task.done_items,
+                "successful_items":successful,
+                "all_clauses_insufficient":all_clauses_insufficient(session,task),
+                "clause_items":sum(u.get('scope','clause')=='clause' for u in snapshot['plan']+snapshot.get('not_applicable',[])),
+                "contract_items":sum(u.get('scope')=='contract' for u in snapshot['plan']),
                 "failed_items": task.failed_items, "processed_items": processed,
                 "not_applicable_items": skipped, "planned_model_items": len(snapshot["plan"]),
                 "keyword_not_applicable_items": skipped - model_na, "model_not_applicable_items": model_na,
-                "executed_items": task.done_items + task.failed_items + model_na,
+                "executed_items": sum(key in planned_keys for key,_ in done_rows),
                 "scope": {"selected_clauses": len(snapshot["clauses"]),
                           "total_parent_clauses": snapshot["all_parent_count"],
                           "max_clauses": snapshot.get("max_clauses")},

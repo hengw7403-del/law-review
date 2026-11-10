@@ -1,5 +1,11 @@
 # 法务合同辅助初审系统
 
+工单默认全10条款规则+5缺失规则，12条合同共125项（clause_items=120、contract_items=5），工单done_items按已处理数计；普通合同接口默认行为保留。容器空知识库会自动导入并启用samples/laws/*.txt，非空不覆盖。最新Docker实测、提示边界和统一格式见[docs/full-rules-firstboot-notes.md](docs/full-rules-firstboot-notes.md)。
+
+工单现已支持“建单即审查、高风险转人工”：正常路径无需接单或再次发起审查，高风险工单needs_human人工确认后才能完成/归档。当前状态机、幂等迁移、确认审计及真实25次调用验收见[docs/auto-ticket-notes.md](docs/auto-ticket-notes.md)。
+
+新增自然语言工单入口：`/workspace/new-ticket`、`/workspace/tickets`，全部使用现有JWT；确认建单、接单后调用既有审查任务服务，worker不变。新增三张表，启动时幂等建表；权限、状态、成本和分步验收见[docs/tickets-notes.md](docs/tickets-notes.md)。
+
 ## Vue工作台
 
 新前端位于src/：Vite + Vue 3 Composition API + Router 4 history + Pinia，仅用户会话入store，fetch统一请求，零UI库。运行`npm ci`、`npm run build`生成dist，然后启动FastAPI，打开`http://127.0.0.1:8000/workspace/contracts`；开发可另开`npm run dev`（5173代理API到8000）。旧.html工作台仍保留兼容。history fallback只作用于/workspace页面，不覆盖业务API和缺失资源。
@@ -56,7 +62,7 @@
 
 Python 3.9 · FastAPI · SQLite · SQLAlchemy · rank-bm25 · jieba · DeepSeek API · Docker Compose
 
-零前端框架：原生 HTML + JS，无 CDN、无构建步骤，内网离线可用。
+前端使用 Vue 3 Composition API + Vite，手写样式、无 UI 组件库或运行时 CDN；原生版本仍保留兼容。
 
 ---
 
@@ -64,28 +70,20 @@ Python 3.9 · FastAPI · SQLite · SQLAlchemy · rank-bm25 · jieba · DeepSeek 
 
 ```powershell
 cd law-review
-Copy-Item .env.docker.example .env
+Copy-Item .env.docker.example .env.docker
 
-# 编辑 .env，填两个值：
+# 编辑 .env.docker，填两个值：
 #   JWT_SECRET=<32 字节以上随机串>
 #   DEEPSEEK_API_KEY=sk-xxx
 
-docker compose build
-docker compose up -d
-docker compose exec api python -m app.cli seed-users
+docker compose --env-file .env.docker build
+docker compose --env-file .env.docker up -d
+docker compose --env-file .env.docker exec api python -m app.cli seed-users
 ```
 
 打开 `http://localhost`，用 `reviewer01` 登录。
 
-首次使用需要导入法规，否则审查会直接「依据不足」：
-
-```powershell
-docker compose exec api python -m app.cli import-law --file samples/laws/civil_code_liability.txt --source-id civil-code-liability --name "民法典合同编：违约责任节选"
-docker compose exec api python -m app.cli import-law --file samples/laws/civil_code_termination.txt --source-id civil-code-termination --name "民法典合同编：解除与争议条款节选"
-docker compose exec api python -m app.cli enable-source --source-id civil-code-liability
-docker compose exec api python -m app.cli enable-source --source-id civil-code-termination
-docker compose restart api worker
-```
+首次空知识库启动会自动导入并启用 samples/laws 下全部 TXT，日志显示自动导入条数。非空库不会覆盖，也不会重新启用已停用的条文。导入失败仅记录警告；可在工作台“法规知识库导入说明”中查看手工导入方法。
 
 上传 `samples/contract_a.txt`，发起审查，看结果页。
 
@@ -194,7 +192,7 @@ docker compose --env-file .env.docker exec api python -m app.cli seed-users
 docker compose --env-file .env.docker exec api python -m app.cli create-user --username reviewer03 --role reviewer
 ```
 
-打开 http://localhost/ 登录。新卷知识库也为空；先按正常流程导入核对的法规，否则审查可能直接依据不足、没有真实模型调用。例如：
+打开 http://localhost/ 登录。容器空知识库首次自动导入并启用内置法条（目前26块/4个来源），非空时保持不变。以下是手工补充示例；已有来源若内容或元数据变更，需使用新版本，不要重复换ID导入：
 
 ```powershell
 docker compose --env-file .env.docker exec api python -m app.cli import-law --file samples/laws/civil_code_liability.txt --source-id civil-code-liability --name "民法典违约责任节选"
@@ -286,7 +284,7 @@ API与worker仍是独立进程。仅启动Uvicorn时可以登录、上传、建�
 
 应用启动时生成项目根目录的 `law.db` 并创建缺失表；数据库路径基于项目位置，不随启动工作目录变化。可用环境变量 `DATABASE_URL` 覆盖，例如测试临时数据库。当前仅支持 SQLite。
 
-就绪检查执行真实主数据库写事务及零行更新，最后回滚；不创建测试账号、不修改业务数据，也不增加第八张表。SQLite 启用外键、WAL 和五秒忙等待。
+就绪检查执行真实主数据库写事务及零行更新，最后回滚；不创建测试账号、不修改业务数据，也不增加第八张表。SQLite 每个连接启用外键、WAL、30 秒 busy_timeout 和 synchronous=NORMAL。
 
 `create_all` 用于缺失表初始化。`app/migrations.py` 启动时幂等迁移旧库：允许预览日志的 review_id 为空，新增 contracts.preamble，扩展 review_items 状态约束以支持 not_applicable。迁移保留历史数据、外键和索引；本轮升级前备份见 `work/backups/law-before-applicability-*.db`。仍未引入完整 Alembic revision 目录，其他结构变更不能依靠 create_all 升级。
 
@@ -631,7 +629,7 @@ GET  /reviews/{id}/report     UTF-8 Markdown 草稿（review ID 即 task ID）
 - worker 对数据库路径对应的 `.worker.lock` 获取 OS 排他锁；第二个 worker 拒绝启动，不重置任务。进程被 kill 后锁自动释放。
 - 取得锁后才把遗留 running 重置为 queued，再按创建时间领取最早任务；领取完成即提交。
 - 从计划幂等预建 pending 检查项，每项的模型调用都在数据库事务外进行。
-- 每一项的 machine_result、执行状态与进度在同一事务提交。重启跳过 done 项，继续 pending 项，旧结果不覆盖。
+- 每一项的 machine_result 和执行状态先用短事务提交，进度随后用独立短事务更新。重启跳过 done 项，继续 pending 项，旧结果不覆盖。
 - 单元失败保存 failed 结果并继续；有单元失败则任务 partial_failed；全成功则 completed。快照或数据库等任务级故障标 failed 并保留已存检查点。
 - 模型请求前写入 CALL_IN_PROGRESS 日志，得到返回后更新同一行；日志绑定真实 review_id 和 item_id，不再使用预览空关联。
 - 重启将中断中的预记标为 INTERRUPTED_UNKNOWN_USAGE，仍占用预算。若远端已处理但本地尚未提交结果，pending 项可能重发；不承诺外部 API 恰好一次，但已提交的 done 项不会再调用。
@@ -710,3 +708,11 @@ seed-users 创建 admin/admin、reviewer01/reviewer、reviewer02/reviewer（格�
 安装后，普通的 `python -m pip install -r requirements.txt` 已再次执行成功。`work/` 和 `.venv/` 均不提交 Git。
 
 </details>
+
+### SQLite 并发与数据目录
+
+本次并发问题的根因判断为“锁等待超时缺失 + 事务持锁时间过长”（基于现象推断，未做对照实验）。正式库原本已是 WAL，WAL 不是本次修复点；真正生效的是 busy_timeout 从 5 秒增至 30 秒及事务边界收紧。“超时缺失”指缺少适合当前负载的等待配置，并非原先完全未设置。恢复期间健康接口和 `/tickets` 各 142 次检测全 200，是修复后可用性的有效证据，不代表已通过对照实验证明根因。详见 `docs/db-concurrency-notes.md`。
+
+数据目录必须可写：WAL 模式需要在 law.db 同目录创建 law.db-wal 和 law.db-shm。不要只授予数据库文件写权限；不要在运行时删除 WAL/SHM 文件。API 和 worker 必须访问同一文件系统上的同一数据库。Windows Docker Desktop 的共享目录若出现 SQLITE_CANTOPEN，需同时检查挂载、文件权限和容器日志，不能将其直接归因于锁等待。
+
+并发自验（不调用模型）：`docker compose --env-file .env.docker exec -T api python scripts/db_concurrency_check.py --database /data/law.db --base-url http://nginx --seconds 30 --output /data/concurrency-simulation.json`。应在数据库所属的容器内执行，使用容器路径 `/data/law.db`，避免宿主机进程与 Linux 容器同时操作 WAL。恢复任务时将 `--seconds 30` 换成 `--task-id <id>`；`--token-file` 可额外检测已认证的 `/tickets`。任一非 200、超时、断点重复调用或 180 秒无进展均视为失败。报告默认写入 work/db-concurrency-report.json。

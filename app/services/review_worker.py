@@ -1,6 +1,7 @@
 """Single-process worker with per-item checkpoints and an OS-owned lock."""
 
 import json
+import logging
 import os
 from pathlib import Path
 import time
@@ -18,7 +19,7 @@ from app.services.risk_judge import RiskJudge, failed_result
 from app.services.search import BM25Index, TOKENIZER_VERSION
 from app.services.missing_judge import MissingJudge
 from app.services.review_rules import RULES_VERSION
-from app.services.risk_merge import merge_task_items
+from app.services.risk_merge import merge_clause_items, merge_task_items
 from app.prompts.missing_judge import PROMPT_VERSION as MISSING_PROMPT_VERSION
 
 
@@ -112,15 +113,21 @@ class ReviewWorker:
                     rule_id=unit["rule_id"], execution_status="done", check_status="not_applicable",
                     machine_result=json.dumps(result, ensure_ascii=False),
                 ).on_conflict_do_nothing(index_elements=["review_id", "item_key"]))
-            refresh_progress(session, task)
             task.stage = "reviewing"
             return snapshot
+
+    def _update_progress(self, task_id: str) -> None:
+        # An item checkpoint must survive even if the progress update fails.
+        # Recovery recomputes counters from committed items before continuing.
+        with self.session_factory.begin() as session:
+            refresh_progress(session, session.get(ReviewTask, task_id))
 
     def execute(self, task_id: str) -> None:
         judge = None
         client = None
         try:
             snapshot = self._prepare(task_id)
+            self._update_progress(task_id)
             index = BM25Index([KnowledgeChunk(**row) for row in snapshot["knowledge"]])
             if self.judge_factory is not None:
                 judge = self.judge_factory(index, task_id, snapshot)
@@ -150,15 +157,19 @@ class ReviewWorker:
                     if result.get("check_status") not in {"supported", "insufficient", "failed", "no_issue_detected", "not_applicable"}:
                         raise ValueError("Invalid judge result status")
                 except Exception:
+                    logging.getLogger(__name__).exception("Review unit failed: %s", unit["item_key"])
                     result = failed_result("UNIT_EXECUTION_FAILED")
                 result.update({"clause_text": clause["content"] if clause else "合同全部条款摘要清单",
                                "clause_id": unit["clause_id"],
                                "rule_id": unit["rule_id"], "item_key": unit["item_key"]})
+                serialized_result = json.dumps(result, ensure_ascii=False)
+                checkpoint_started = time.perf_counter()
+                merge_ms = 0.0
                 with self.session_factory.begin() as session:
                     item = session.get(ReviewItem, item_id)
                     if item.execution_status == "done":
                         continue
-                    item.machine_result = json.dumps(result, ensure_ascii=False)
+                    item.machine_result = serialized_result
                     item.check_status = result["check_status"]
                     item.risk_level = None if result["check_status"] in {"no_issue_detected", "not_applicable"} else result.get("risk_level", "unknown")
                     item.execution_status = "done"
@@ -167,32 +178,43 @@ class ReviewWorker:
                         session.execute(update(LLMLog).where(
                             LLMLog.item_id == item_id, LLMLog.error_code == "CALL_IN_PROGRESS"
                         ).values(error_code="UNKNOWN_USAGE_AFTER_UNIT_FAILURE"))
-                    task = session.get(ReviewTask, task_id)
                     session.flush()
-                    merge_task_items(session, task_id)
-                    session.flush()
-                    refresh_progress(session, task)
+                    if unit.get("clause_id"):
+                        merge_started = time.perf_counter()
+                        merge_clause_items(session, task_id, unit["clause_id"])
+                        session.flush()
+                        merge_ms = (time.perf_counter() - merge_started) * 1000
+                self._update_progress(task_id)
                 print(json.dumps({"event": "unit_committed", "task_id": task_id,
+                                  "committed_at": utc_now(), "merge_ms": round(merge_ms, 3),
+                                  "checkpoint_ms": round((time.perf_counter() - checkpoint_started) * 1000, 3),
                                   "item_key": unit["item_key"], "applicable": result.get("applicable"),
                                   "has_issue": result.get("has_issue"), "check_status": result["check_status"],
                                   "evidence_count": len(result.get("evidence", []))}), flush=True)
                 if self.unit_delay:
                     time.sleep(self.unit_delay)
+            self._update_progress(task_id)
             with self.session_factory.begin() as session:
                 task = session.get(ReviewTask, task_id)
-                refresh_progress(session, task)
+                merge_task_items(session, task_id)  # Once, after all units finish.
+                session.flush()
                 task.status = "partial_failed" if task.failed_items else "completed"
                 task.stage = "finished"
                 task.finished_at = utc_now()
+                from app.services.ticket_completion import complete_tickets
+                complete_tickets(session, task)
             print(json.dumps({"event": "task_finished", **get_task(self.session_factory, task_id)}, ensure_ascii=False), flush=True)
         except Exception:
+            logging.getLogger(__name__).exception("Review task failed: %s", task_id)
+            self._update_progress(task_id)
             with self.session_factory.begin() as session:
                 task = session.get(ReviewTask, task_id)
-                refresh_progress(session, task)
                 task.status, task.stage = "failed", "failed"
                 task.error_code = "TASK_EXECUTION_FAILED"
                 task.error_message = "任务快照、数据库或执行配置异常，请检查后创建新版本；已保存单元保留。"
                 task.finished_at = utc_now()
+                from app.services.ticket_completion import complete_tickets
+                complete_tickets(session, task)
             print(json.dumps({"event": "task_failed", "task_id": task_id}), flush=True)
         finally:
             if client is not None:

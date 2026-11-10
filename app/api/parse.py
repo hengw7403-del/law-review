@@ -1,14 +1,15 @@
-"""Unauthenticated, stateless document preview for the pre-login phase."""
+"""Authenticated, stateless preview with party and stance recommendations."""
 
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.services.parser import MAX_FILE_SIZE, ParseError
 from app.services.preview import build_preview
+from app.services.auth import current_user
 
 
 router = APIRouter(prefix="/parse", tags=["parse"])
@@ -24,6 +25,9 @@ class ClauseResponse(BaseModel):
 
 
 class PreviewResponse(BaseModel):
+    detected_parties: Dict[str, Optional[str]]
+    suggested_stance: Optional[str]
+    stance_reason: str
     filename: str
     preamble: str
     text_length: int
@@ -33,7 +37,7 @@ class PreviewResponse(BaseModel):
 
 
 @router.post("/preview", response_model=PreviewResponse)
-async def preview(file: UploadFile = File(...)):
+async def preview(file: UploadFile = File(...), user=Depends(current_user)):
     try:
         data = bytearray()
         while True:
@@ -43,7 +47,7 @@ async def preview(file: UploadFile = File(...)):
             if len(data) + len(chunk) > MAX_FILE_SIZE:
                 raise ParseError("FILE_TOO_LARGE", "单文件不得超过 20 MB", 413)
             data.extend(chunk)
-        return await run_in_threadpool(build_preview, file.filename or "", bytes(data))
+        return await run_in_threadpool(build_preview, file.filename or "", bytes(data), user.org_name)
     except ParseError as exc:
         return JSONResponse(status_code=exc.status_code, content={
             "error": {"code": exc.code, "message": exc.message},

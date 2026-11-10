@@ -5,9 +5,10 @@ from typing import Any, Dict
 from app.services.clause_splitter import split_document
 from app.services.parse_quality import assess_quality
 from app.services.parser import ParseError, display_filename, parse_document
+from app.services.party_parser import party_detection
 
 
-def build_preview(filename: str, data: bytes) -> Dict[str, Any]:
+def build_preview(filename: str, data: bytes, org_name=None) -> Dict[str, Any]:
     text, page_map = parse_document(filename, data)
     document = split_document(text, page_map)
     clauses = document["clauses"]
@@ -19,6 +20,7 @@ def build_preview(filename: str, data: bytes) -> Dict[str, Any]:
         }
         raise ParseError(error or "EMPTY_TEXT", messages[error or "EMPTY_TEXT"])
     return {
+        **party_detection(text, org_name),
         "filename": display_filename(filename),
         "preamble": document["preamble"],
         "text_length": len(text),

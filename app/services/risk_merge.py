@@ -20,22 +20,28 @@ def signature(result):
     return ('topics', topics) if topics else ('exact', re.sub(r'\W+', '', description)) if description.strip() else None
 
 
-def merge_task_items(session, task_id):
+def merge_clause_items(session, task_id, clause_id):
+    """只合并同一条款下的重复风险，最多十几条；目标内容未变时不赋值。"""
+    if clause_id is None:
+        return
     rows = list(session.scalars(select(ReviewItem).where(
-        ReviewItem.review_id == task_id, ReviewItem.clause_id.is_not(None),
+        ReviewItem.review_id == task_id, ReviewItem.clause_id == clause_id,
         ReviewItem.execution_status == 'done', ReviewItem.check_status.in_(['supported', 'merged']))))
+    if len(rows) < 2:
+        return
     groups = {}
+    targets = {}
     for row in rows:
-        result = json.loads(row.machine_result)
+        original = json.loads(row.machine_result)
+        result = dict(original)
         # Recompute from all saved findings so a later, higher risk can replace the winner.
         result['check_status'] = 'supported'
         for key in ('merged_into', 'merge_reason', 'merge_version', 'merged_from'):
             result.pop(key, None)
-        row.check_status = 'supported'
+        targets[row.id] = (row, original, result)
         key = signature(result)
         if key is not None:
-            groups.setdefault((row.clause_id, key), []).append((row, result))
-        row.machine_result = json.dumps(result, ensure_ascii=False)
+            groups.setdefault(key, []).append((row, result))
     for entries in groups.values():
         if len(entries) < 2:
             continue
@@ -43,10 +49,24 @@ def merge_task_items(session, task_id):
                                        0 if pair[0].rule_id == 'termination' else 1, pair[0].item_key))
         winner, winning_result = entries[0]
         winning_result['merged_from'] = [row.item_key for row, _ in entries[1:]]
-        winner.machine_result = json.dumps(winning_result, ensure_ascii=False)
         for row, result in entries[1:]:
             result.update(check_status='merged', original_check_status='supported',
                           merged_into=winner.item_key, merge_version=MERGE_VERSION,
                           merge_reason='同条款同一风险点，保留最高等级；同级按稳定优先级保留。')
-            row.check_status = 'merged'
+    for row, original, result in targets.values():
+        if row.check_status != result['check_status']:
+            row.check_status = result['check_status']
+        # Compare JSON values, not serialization whitespace/order: unrelated
+        # findings and an idempotent rerun must not enter session.dirty.
+        if original != result:
             row.machine_result = json.dumps(result, ensure_ascii=False)
+
+
+def merge_task_items(session, task_id):
+    """全任务最终校正/旧数据修复；每单元路径不再调用，只在任务结束时一次调用。"""
+    clause_ids = session.scalars(select(ReviewItem.clause_id).where(
+        ReviewItem.review_id == task_id, ReviewItem.clause_id.is_not(None),
+        ReviewItem.execution_status == 'done',
+        ReviewItem.check_status.in_(['supported', 'merged'])).distinct()).all()
+    for clause_id in clause_ids:
+        merge_clause_items(session, task_id, clause_id)

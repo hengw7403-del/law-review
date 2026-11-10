@@ -126,7 +126,7 @@ class LLMClient:
             raise LLMLoggingError("模型格式错误分类写入失败") from exc
 
     def _begin_attempt(self, context: CallContext) -> None:
-        if context.review_id is None:
+        if context.review_id is None and context.purpose not in {"conversation", "ticket_intent"}:
             return
         log_id = uuid.uuid4().hex
         try:
@@ -170,7 +170,9 @@ class LLMClient:
             raise LLMLoggingError("模型尝试已发生，但调用日志写入失败") from exc
 
     def complete(self, messages: List[Dict[str, str]], context: CallContext,
-                 max_retries: Optional[int] = None) -> Tuple[str, Dict[str, Any], int]:
+                 max_retries: Optional[int] = None, max_output_tokens: int = 1536) -> Tuple[str, Dict[str, Any], int]:
+        if not 1 <= max_output_tokens <= 1536:
+            raise ValueError("Invalid output token limit")
         client = self._get_client()
         retries = MAX_RETRIES if max_retries is None else max_retries
         if not 0 <= retries <= MAX_RETRIES:
@@ -188,7 +190,7 @@ class LLMClient:
             try:
                 response = client.chat.completions.create(
                     model=MODEL, messages=messages, temperature=0,
-                    response_format={"type": "json_object"}, max_tokens=1536,
+                    response_format={"type": "json_object"}, max_tokens=max_output_tokens,
                     stream=False,
                 )
                 model = getattr(response, "model", None) or MODEL

@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {formatTime,ticketNumber,focusLabel} from '../src/utils/format.js';
+assert.equal(formatTime('2026-11-10T04:07:53.242848+00:00'),'2026-11-10 12:07');
+assert.equal(formatTime('2026-11-10 04:07:53'),'2026-11-10 12:07');
+assert.equal(formatTime('2026-11-10T16:00:00Z'),'2026-11-11 00:00');
+assert.equal(formatTime('bad'),'—');
+assert.equal(ticketNumber('143fc8614448e2690f6f9f3b98b9cb7'),'#143fc861');
+assert.equal(focusLabel([]),'全部条款');
+assert.equal(focusLabel(['违约金','付款条件']),'违约金、付款条件');
+console.log('Shanghai date, day boundary, ticket number and focus formatting passed');

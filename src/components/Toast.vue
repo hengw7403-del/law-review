@@ -1,6 +1,6 @@
 <script setup>
 import { watch, ref, onUnmounted } from "vue";
-const props = defineProps({ message: { type: String, default: "" } });
+const props = defineProps({ message: { type: String, default: "" }, variant: { type: String, default: "error" } });
 const visible = ref(false);
 let timer;
 watch(
@@ -15,5 +15,5 @@ watch(
 onUnmounted(() => clearTimeout(timer));
 </script>
 <template>
-  <p v-if="visible" class="notice error toast" role="alert">{{ message }}</p>
+  <p v-if="visible" class="notice toast" :class="{ error: variant === 'error' }" :role="variant === 'error' ? 'alert' : 'status'">{{ message }}</p>
 </template>

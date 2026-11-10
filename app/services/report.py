@@ -57,7 +57,7 @@ def generate_report(session_factory, task_id: str) -> str:
                  "| {} | {} | {} | {} | {} | {} | {} | {} |".format(
                      counts["high"], counts["medium"], counts["low"], counts["insufficient"],
                      counts["failed"], counts["no_issue_detected"], counts["not_applicable"],
-                     max(0, task.total_items - task.done_items - task.failed_items - counts["not_applicable"])), "",
+                     max(0, task.total_items - sum(item.execution_status=='done' for item in items))), "",
                  "模型尝试：{}；prompt_tokens：{}；completion_tokens：{}；总 token：{}；模型累计耗时：{} ms。".format(
                      metrics["model_calls"], metrics["prompt_tokens"], metrics["completion_tokens"],
                      metrics["total_tokens"], metrics["model_duration_ms"]),

@@ -53,7 +53,7 @@ class SchemaTests(unittest.TestCase):
             names = set(actual.exec_driver_sql(
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).scalars())
-            self.assertEqual(names, TABLES)
+            self.assertEqual(names, TABLES | {'conversations','conversation_messages','tickets'})
             for table in sorted(TABLES):
                 with self.subTest(table=table):
                     expected_columns = list(self.reference.execute(
@@ -70,6 +70,8 @@ class SchemaTests(unittest.TestCase):
                                    else bool(r[3] or r[5]), r[4], r[5]) for r in rows]
                         if table == "contracts" and not any(v[0] == "preamble" for v in values):
                             values.append(("preamble", "TEXT", False, None, 0))
+                        if table == "users" and not any(v[0] == "org_name" for v in values):
+                            values.append(("org_name", "TEXT", False, None, 0))
                         return sorted(values)
                     self.assertEqual(normalize(actual_columns), normalize(expected_columns))
                     expected_fks = {tuple(r[2:]) for r in self.reference.execute(

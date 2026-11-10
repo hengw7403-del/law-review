@@ -54,9 +54,33 @@ export async function request(
 }
 const id = encodeURIComponent;
 export const api = {
+  confirmTicket: (key, note = "") =>
+    request(`/tickets/${id(key)}/confirm`, { method: "POST", json: { note } }),
+  abandonConversation: (key) =>
+    request(`/conversations/${id(key)}/abandon`, { method: "POST", json: {} }),
+  startConversation: () =>
+    request("/conversations", { method: "POST", json: {} }),
+  conversation: (key) => request(`/conversations/${id(key)}`),
+  message: (key, content) =>
+    request(`/conversations/${id(key)}/messages`, {
+      method: "POST",
+      json: { content },
+      timeout: 90000,
+    }),
+  tickets: (status) =>
+    request(
+      "/tickets" + (status ? "?status=" + encodeURIComponent(status) : ""),
+    ),
+  ticket: (key) => request(`/tickets/${id(key)}`),
+  reviewTicket: (key) =>
+    request(`/tickets/${id(key)}/review`, { method: "POST", json: {} }),
+  closeTicket: (key) =>
+    request(`/tickets/${id(key)}/close`, { method: "POST", json: {} }),
   login: (credentials) =>
     request("/auth/login", { method: "POST", json: credentials }),
   me: () => request("/auth/me"),
+  updateOrganization: (org_name) => request("/auth/me", { method: "PATCH", json: { org_name } }),
+  preview: (body) => request("/parse/preview", { method: "POST", body, timeout: 90000 }),
   contracts: () => request("/contracts"),
   upload: (body) =>
     request("/contracts", { method: "POST", body, timeout: 90000 }),

@@ -1,7 +1,7 @@
 import json
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
@@ -39,9 +39,12 @@ def list_contracts(user=Depends(current_user)):
 
 
 @router.post("", status_code=201)
-async def upload_contract(file: UploadFile = File(...), stance: Literal["party_a", "party_b"] = Form("party_a"),
+async def upload_contract(file: UploadFile = File(...), stance: Optional[Literal["party_a", "party_b"]] = Form(None),
+                          party_stance: Optional[Literal["party_a", "party_b"]] = Form(None),
                           title: Optional[str] = Form(None, max_length=200), user=Depends(current_user)):
     try:
+        if stance and party_stance and stance != party_stance:
+            raise HTTPException(422, "立场参数不一致")
         data = bytearray()
         while True:
             chunk = await file.read(64 * 1024)
@@ -50,7 +53,7 @@ async def upload_contract(file: UploadFile = File(...), stance: Literal["party_a
             if len(data) + len(chunk) > MAX_FILE_SIZE:
                 raise ParseError("FILE_TOO_LARGE", "单文件不得超过20MB", 413)
             data.extend(chunk)
-        return await run_in_threadpool(create_contract, db.SessionLocal, user, file.filename or "", bytes(data), stance, title)
+        return await run_in_threadpool(create_contract, db.SessionLocal, user, file.filename or "", bytes(data), party_stance or stance or "party_a", title)
     except ParseError as error:
         return JSONResponse(status_code=error.status_code, content={"error": {"code": error.code, "message": error.message}})
     finally:

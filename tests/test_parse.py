@@ -180,7 +180,7 @@ class PreviewApiTests(unittest.TestCase):
             self.assertEqual(status, 200)
         with sqlite3.connect(str(self.server.database)) as connection:
             tables = [r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")]
-            self.assertEqual(len(tables), 7)
+            self.assertEqual(len(tables), 10)
             for table in tables:
                 self.assertEqual(connection.execute("SELECT count(*) FROM " + table).fetchone()[0], 1 if table == "users" else 0)
 

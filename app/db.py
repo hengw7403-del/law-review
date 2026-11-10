@@ -21,7 +21,7 @@ Base = declarative_base()
 def create_db_engine(database_url: str) -> Engine:
     db_engine = create_engine(
         database_url,
-        connect_args={"check_same_thread": False, "timeout": 5.0},
+        connect_args={"check_same_thread": False, "timeout": 30.0},
     )
 
     @event.listens_for(db_engine, "connect")
@@ -29,7 +29,12 @@ def create_db_engine(database_url: str) -> Engine:
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute("PRAGMA foreign_keys = ON")
-            cursor.execute("PRAGMA busy_timeout = 5000")
+            cursor.execute("PRAGMA busy_timeout = 30000")
+            # WAL persists on disk; timeout and synchronous are connection-local.
+            # Configure before SQLAlchemy starts a transaction, including clients
+            # that create an engine without calling init_db (CLI/tests).
+            cursor.execute("PRAGMA journal_mode = WAL")
+            cursor.execute("PRAGMA synchronous = NORMAL")
         finally:
             cursor.close()
 
@@ -55,9 +60,15 @@ def init_db() -> None:
     with engine.connect() as connection:
         connection.exec_driver_sql("PRAGMA journal_mode = WAL")
     Base.metadata.create_all(bind=engine)
+    from app.migrations import add_user_org_name
+    add_user_org_name(engine)
     from app.migrations import allow_preview_llm_logs, add_applicability_and_preamble
     allow_preview_llm_logs(engine)
     add_applicability_and_preamble(engine)
+    from app.migrations import add_ticket_tables
+    add_ticket_tables(engine)
+    from app.migrations import ticket_auto_review
+    ticket_auto_review(engine)
 
 
 def check_database_ready() -> None:

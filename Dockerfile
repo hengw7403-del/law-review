@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
 COPY requirements.txt constraints-py39.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY --chown=app:app app ./app
+COPY --chown=app:app scripts/db_concurrency_check.py ./scripts/db_concurrency_check.py
 COPY --chown=app:app samples ./samples
 COPY --from=web-build --chown=app:app /web/dist ./dist
 USER 10001:10001
