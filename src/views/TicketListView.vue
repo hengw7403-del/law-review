@@ -1,4 +1,5 @@
 <script setup>
+import LoadingSkeleton from "../components/LoadingSkeleton.vue";
 import { ref, onMounted } from "vue";
 import { api } from "../api/index.js";
 import StatusBadge from "../components/StatusBadge.vue";
@@ -58,14 +59,17 @@ onMounted(load);
       {{ label }}
     </button>
   </div>
-  <p v-if="loading" class="loading">正在读取工单 · · ·</p>
+  <LoadingSkeleton v-if="loading" label="正在读取工单" />
   <p v-if="error" class="notice error">
     {{ error }} <button @click="load">重试</button>
   </p>
   <EmptyState
     v-if="!loading && !tickets.length && !error"
-    text="当前筛选下还没有工单"
-  /><router-link
+    :text="status ? '当前筛选下还没有工单' : '还没有工单'"
+    :description="status ? '切换状态筛选，查看其他工单。' : '发起第一份工单，在这里跟踪处理进度。'"
+  >
+    <template v-if="!status" #action><router-link class="button primary" to="/workspace/new-ticket">发起工单</router-link></template>
+  </EmptyState><router-link
     v-for="ticket in tickets"
     :key="ticket.id"
     class="panel ticket-card"

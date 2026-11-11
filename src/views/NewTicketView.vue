@@ -1,4 +1,5 @@
 <script setup>
+import LoadingSkeleton from "../components/LoadingSkeleton.vue";
 import { ref, onMounted, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "../api/index.js";
@@ -134,7 +135,7 @@ onMounted(restore);
       重新开始
     </button>
   </header>
-  <p v-if="loading" class="loading">正在恢复会话 · · ·</p>
+  <LoadingSkeleton v-if="loading" label="正在恢复会话" />
   <p v-if="error" class="notice error">
     {{ error }} <button @click="restore">重新加载</button>
   </p>

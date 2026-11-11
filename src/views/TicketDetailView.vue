@@ -1,4 +1,5 @@
 <script setup>
+import LoadingSkeleton from "../components/LoadingSkeleton.vue";
 import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRoute } from "vue-router";
 import { api } from "../api/index.js";
@@ -83,7 +84,7 @@ onUnmounted(() => {
 </script>
 <template>
   <router-link to="/workspace/tickets">← 返回工单列表</router-link>
-  <p v-if="loading" class="loading">正在读取 · · ·</p>
+  <LoadingSkeleton v-if="loading" label="正在读取" />
   <p v-if="error" class="notice error">
     {{ error }} <button @click="load">重试</button>
   </p>

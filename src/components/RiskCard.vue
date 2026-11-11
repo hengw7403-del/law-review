@@ -22,10 +22,10 @@ const names = {
 <template>
   <article class="panel risk-card" :class="item.risk_level">
     <header class="page-head">
-      <h2>
-        {{ item.scope === "contract" ? "合同级缺失" : item.clause_no }} ·
-        {{ names[item.rule_id] || item.rule_id }}
-      </h2>
+      <div class="risk-title">
+        <h2>{{ item.scope === "contract" ? "合同级缺失" : item.clause_no }}</h2>
+        <span class="risk-rule">{{ names[item.rule_id] || item.rule_id }}</span>
+      </div>
       <StatusBadge
         :status="
           item.check_status === 'supported' ? item.risk_level : 'unknown'
@@ -33,13 +33,13 @@ const names = {
       />
     </header>
     <p>{{ item.description }}</p>
-    <p class="muted">建议：{{ item.suggestion || "（无）" }}</p>
+    <p class="muted"><span aria-hidden="true">💡</span> 建议：{{ item.suggestion || "（无）" }}</p>
     <details v-if="item.scope === 'clause'">
       <summary>查看条款原文</summary>
       <p class="pre-wrap">{{ item.clause_content }}</p>
     </details>
-    <details>
-      <summary>依据（{{ item.evidence.length }} 条）</summary>
+    <details class="risk-evidence">
+      <summary><span class="evidence-arrow" aria-hidden="true">▸</span> 依据（{{ item.evidence.length }} 条）</summary>
       <section
         v-for="(source, index) in item.evidence"
         :key="source.chunk_id || index"

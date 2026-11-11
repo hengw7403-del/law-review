@@ -1,4 +1,5 @@
 <script setup>
+import LoadingSkeleton from "../components/LoadingSkeleton.vue";
 import { formatTime } from "../utils/format.js";
 import { ref, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
@@ -121,11 +122,13 @@ onMounted(load);
       ><small>已审查</small>
     </div>
   </div>
-  <p v-if="loading" class="loading">正在加载 · · ·</p>
+  <LoadingSkeleton v-if="loading" label="正在加载" />
   <p v-if="error" class="notice error">
     {{ error }} <button @click="load">重新加载</button>
   </p>
-  <EmptyState v-if="!loading && !error && !contracts.length" />
+  <EmptyState v-if="!loading && !error && !contracts.length" description="上传第一份合同，开始审查。">
+    <template #action><button class="primary" @click="openUpload">上传合同</button></template>
+  </EmptyState>
   <article
     v-for="contract in contracts"
     :key="contract.contract_id"

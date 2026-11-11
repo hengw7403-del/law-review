@@ -1,12 +1,20 @@
 <script setup>
+import LoadingSkeleton from "../components/LoadingSkeleton.vue";
 import { ref, onMounted } from 'vue';
 import { api } from '../api/index.js';
 import { useUserStore } from '../stores/user.js';
 import StatusBadge from '../components/StatusBadge.vue';
 import EmptyState from '../components/EmptyState.vue';
+import AppIcon from '../components/AppIcon.vue';
 import Toast from '../components/Toast.vue';
 import { formatTime, ticketNumber } from '../utils/format.js';
 const user = useUserStore(), data = ref(null), error = ref(''), loading = ref(true);
+const metrics = [
+  { key: 'contracts', label: '合同', icon: 'document' },
+  { key: 'tickets', label: '工单', icon: 'tickets' },
+  { key: 'tickets_needs_human', label: '待人工确认', icon: 'pending' },
+  { key: 'high_risk_total', label: '工单高风险', icon: 'risk' },
+];
 async function load() {
   loading.value = true; error.value = '';
   try { data.value = await api.dashboard(); }
@@ -17,11 +25,16 @@ onMounted(load);
 </script>
 <template>
   <header class="page-head"><div><h1>{{ user.role === 'requester' ? '我的提交' : '概览' }}</h1><p class="muted">{{ user.role === 'requester' ? '查看你的合同审查进度和结果。' : '合同审查与工单处理工作台。' }}</p></div><div class="actions"><button :disabled="loading" @click="load">刷新</button><router-link class="button primary" to="/workspace/new-ticket">发起工单</router-link></div></header>
-  <p v-if="loading" class="loading">正在加载 · · ·</p>
+  <LoadingSkeleton v-if="loading" label="正在加载" />
   <p v-if="error" class="notice error">{{ error }} <button @click="load">重试</button></p>
   <template v-if="data">
     <template v-if="user.role === 'admin'">
-      <section class="stats dashboard-stats"><div v-for="[key, label] in [['contracts','合同'],['tickets','工单'],['tickets_needs_human','待人工确认'],['high_risk_total','工单高风险']]" :key="key"><strong>{{ data[key] }}</strong><small>{{ label }}</small></div></section>
+      <section class="stats dashboard-stats">
+        <div v-for="metric in metrics" :key="metric.key" class="panel metric-card" :class="metric.icon">
+          <span class="metric-icon"><AppIcon :name="metric.icon" /></span>
+          <div><strong>{{ data[metric.key] }}</strong><small>{{ metric.label }}</small></div>
+        </div>
+      </section>
       <section class="panel"><h2>最近活动</h2><EmptyState v-if="!data.recent_activity.length" text="还没有活动" /><router-link v-for="activity in data.recent_activity" :key="activity.kind + activity.id" class="activity-row" :to="activity.kind === 'ticket' ? '/workspace/tickets/' + activity.id : '/workspace/contracts/' + activity.id"><span>{{ activity.kind === 'ticket' ? '工单' : '合同' }} · {{ activity.title }}</span><small>{{ formatTime(activity.created_at) }}</small></router-link></section>
     </template>
     <template v-else-if="user.role === 'reviewer'">
@@ -31,7 +44,9 @@ onMounted(load);
       <p class="muted">今天已完成 {{ data.today_done }} 件</p>
     </template>
     <template v-else>
-      <EmptyState v-if="!data.submissions.length" text="还没有提交，点击右上角发起工单" />
+      <EmptyState v-if="!data.submissions.length" text="还没有提交" description="发起第一份工单，在这里查看审查进度。">
+        <template #action><router-link class="button primary" to="/workspace/new-ticket">发起工单</router-link></template>
+      </EmptyState>
       <article v-for="ticket in data.submissions" :key="ticket.id" class="panel ticket-card">
         <div class="page-head"><router-link :to="'/workspace/tickets/' + ticket.id"><h2>{{ ticket.title }}</h2></router-link><StatusBadge :status="ticket.status" /></div>
         <p class="muted">{{ ticketNumber(ticket.id) }} · {{ formatTime(ticket.created_at) }}</p>

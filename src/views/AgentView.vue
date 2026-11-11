@@ -1,4 +1,5 @@
 <script setup>
+import LoadingSkeleton from "../components/LoadingSkeleton.vue";
 import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { api } from '../api/index.js';
@@ -55,7 +56,7 @@ onUnmounted(() => { alive = false; clearTimeout(timer); });
     <section class="panel agent-history" role="dialog" aria-modal="true" aria-labelledby="history-title" tabindex="-1">
       <header class="page-head"><h2 id="history-title">历史记录</h2><button @click="historyOpen = false" aria-label="关闭历史记录">关闭</button></header>
       <label for="history-status">状态</label> <select id="history-status" v-model="historyStatus" @change="loadHistory"><option value="">全部</option><option value="running">执行中</option><option value="completed">已完成</option><option value="partial">部分完成</option><option value="failed">失败</option></select>
-      <p v-if="historyLoading" class="loading">正在读取历史 · · ·</p>
+      <LoadingSkeleton v-if="historyLoading" label="正在读取历史" />
       <p v-else-if="!history.length" class="muted">暂无运行记录</p>
       <article v-for="item in history" :key="item.id" class="history-entry">
         <p class="muted">{{ formatTime(item.created_at) }} · {{ { running: '执行中', completed: '已完成', partial: '部分完成', failed: '失败' }[item.status] }}</p>
@@ -77,7 +78,7 @@ onUnmounted(() => { alive = false; clearTimeout(timer); });
     <header class="page-head"><h2>执行过程</h2><span class="badge">{{ { running: '执行中', completed: '已完成', partial: '部分完成', failed: '未完成' }[run.status] }}</span></header>
     <p v-if="run.request" class="muted">{{ run.request }}</p>
     <p v-if="run.rounds_limit != null" class="muted">已用 {{ run.rounds_used }}/{{ run.rounds_limit }} 步 · 已完成 {{ run.contracts_processed }}/{{ run.contracts_total ?? '待确定' }} 份合同</p>
-    <p v-if="!run.steps.length && run.status === 'running'" class="loading">正在连接 OA 并规划 · · ·</p>
+    <LoadingSkeleton v-if="!run.steps.length && run.status === 'running'" label="正在连接 OA 并规划" />
     <ol class="agent-timeline"><li v-for="step in run.steps" :key="step.round" :class="step.status"><strong>第 {{ step.round }} 步：{{ labels[step.tool] || step.tool }} <span v-if="step.args?.contract_id">{{ step.args.contract_id }}</span></strong><p>{{ step.result_summary }}</p><details v-if="Object.keys(step.args || {}).length"><summary>参数</summary><pre>{{ JSON.stringify(step.args, null, 2) }}</pre></details></li></ol>
     <p v-if="run.status === 'running' && run.progress?.tool === 'review_contract'" class="muted">worker：{{ run.progress.contract_id }} · {{ run.progress.processed_items }}/{{ run.progress.total_items }}</p>
     <p v-if="run.summary" class="agent-summary">{{ run.summary }}</p>

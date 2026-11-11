@@ -1,4 +1,5 @@
 <script setup>
+import LoadingSkeleton from "../components/LoadingSkeleton.vue";
 import { ref, onMounted, computed } from "vue";
 import { useRoute } from "vue-router";
 import { api } from "../api/index.js";
@@ -43,7 +44,7 @@ onMounted(load);
       </button>
     </div>
   </header>
-  <p v-if="loading" class="loading">正在加载 · · ·</p>
+  <LoadingSkeleton v-if="loading" label="正在加载" />
   <p v-if="error" class="notice error">
     {{ error }} <button @click="load">重试</button>
   </p>
