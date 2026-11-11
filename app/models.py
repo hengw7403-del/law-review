@@ -37,7 +37,7 @@ class Contract(Base):
     filename = Column(Text, nullable=False)
     stored_path = Column(Text, nullable=False)
     file_hash = Column(Text, nullable=False)
-    party_stance = Column(Text, nullable=False)
+    party_stance = Column(Text, nullable=True)
     amount_minor = Column(Integer, nullable=True)
     currency = Column(Text, nullable=False, server_default=text("'CNY'"))
     focus_points = Column(Text, nullable=True)
@@ -236,6 +236,59 @@ class ConversationMessage(Base):
     __table_args__ = (CheckConstraint("role IN ('user','assistant')"), Index('idx_conversation_history','conversation_id','created_at'))
 
 
+class AgentRun(Base):
+    __tablename__ = 'agent_runs'
+    id = Column(Text, primary_key=True, nullable=False)
+    request = Column(Text, nullable=False)
+    status = Column(Text, nullable=False)
+    contracts_total = Column(Integer, nullable=True)
+    contracts_processed = Column(Integer, nullable=False, server_default=text('0'))
+    rounds_used = Column(Integer, nullable=False, server_default=text('0'))
+    rounds_limit = Column(Integer, nullable=True)
+    stopped_reason = Column(Text, nullable=True)
+    planning_tokens = Column(Integer, nullable=True)
+    review_tokens = Column(Integer, nullable=True)
+    total_calls = Column(Integer, nullable=False, server_default=text('0'))
+    error_message = Column(Text, nullable=True)
+    created_by = Column(Text, ForeignKey('users.id', ondelete='RESTRICT'), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    finished_at = Column(DateTime(timezone=True), nullable=True)
+    # Compact display/checkpoint metadata only, never contract/result bodies.
+    context_json = Column(Text, nullable=False, server_default=text("'{}'"))
+    __table_args__ = (
+        CheckConstraint("status IN ('running','completed','failed','partial')"),
+        CheckConstraint('contracts_processed >= 0 AND rounds_used >= 0 AND total_calls >= 0'),
+        CheckConstraint('json_valid(context_json)'),
+        Index('idx_agent_runs_created_at', created_at.desc()),
+        Index('idx_agent_runs_created_by', 'created_by'),
+    )
+
+
+class AgentStep(Base):
+    __tablename__ = 'agent_steps'
+    id = Column(Text, primary_key=True, nullable=False)
+    run_id = Column(Text, ForeignKey('agent_runs.id', ondelete='CASCADE'), nullable=False)
+    round = Column(Integer, nullable=False)
+    max_rounds = Column(Integer, nullable=True)
+    decision = Column(Text, nullable=True)
+    tool = Column(Text, nullable=True)
+    args = Column(Text, nullable=False, server_default=text("'{}'"))
+    result_ok = Column(Integer, nullable=True)
+    result_summary = Column(Text, nullable=True)
+    tokens = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    review_task_id = Column(Text, ForeignKey('review_tasks.id', ondelete='SET NULL'), nullable=True)
+    __table_args__ = (
+        UniqueConstraint('run_id','round',name='uq_agent_step_round'),
+        CheckConstraint('round > 0'),
+        CheckConstraint('result_ok IS NULL OR result_ok IN (0,1)'),
+        CheckConstraint('length(result_summary) <= 200'),
+        CheckConstraint("json_valid(args) AND json_type(args)='object'"),
+        Index('idx_agent_steps_run_round','run_id','round'),
+    )
+
+
 class Ticket(Base):
     __tablename__ = 'tickets'
     id = Column(Text, primary_key=True, nullable=False)
@@ -255,10 +308,14 @@ class Ticket(Base):
     confirmed_at = Column(DateTime(timezone=True), nullable=True)
     confirmation_note = Column(Text, nullable=True)
     review_error = Column(Text, nullable=True)
+    source_system = Column(Text, nullable=True)
+    source_contract_id = Column(Text, nullable=True)
+    source_content_hash = Column(Text, nullable=True)
+    agent_run_id = Column(Text, nullable=True)
     created_at = Column(Text, nullable=False, server_default=text('CURRENT_TIMESTAMP'))
     updated_at = Column(Text, nullable=False, server_default=text('CURRENT_TIMESTAMP'))
     __table_args__ = (
-        CheckConstraint("status IN ('pending','reviewing','needs_human','done','closed')"),
+        CheckConstraint("status IN ('pending','needs_stance','reviewing','needs_human','done','closed')"),
         CheckConstraint("priority IN ('low','normal','urgent')"),
         CheckConstraint("json_valid(focus_points) AND json_type(focus_points)='array'"),
         CheckConstraint('high_risk_count >= 0'),

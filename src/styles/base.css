@@ -580,10 +580,18 @@ nav .actions {
 .human-warning h2 {
   color: var(--warn);
 }
-.badge.needs_human {
+.badge.needs_human,
+.badge.needs_stance {
   background: #fff7ed;
   color: var(--warn);
 }
+.agent-history-modal { grid-template-columns: minmax(0, 1fr); justify-items: center; }
+.agent-history { min-width: 0; max-height: 85vh; overflow-y: auto; overflow-wrap: anywhere; }
+.agent-history .page-head { flex-wrap: wrap; }
+.history-entry { border-bottom: 1px solid var(--border); padding: 16px 0; }
+.history-entry p { margin: 8px 0; }
+.attention-filter { border-color: #f0d5b1; color: var(--warn); }
+.attention-filter.primary { color: white; }
 #confirm-note {
   display: block;
   width: 100%;

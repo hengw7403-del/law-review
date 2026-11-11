@@ -19,7 +19,7 @@ lock = threading.RLock()
 contracts = {}
 
 
-def reset(count=3):
+def reset(count=3,clear_stance=None):
     if isinstance(count,bool) or not isinstance(count,int) or not 0<=count<=100:
         raise ValueError('OA测试合同数必须在0至100之间')
     samples=['contract_a.txt','contract_c_bad.txt','contract_c_clean.txt']
@@ -29,6 +29,7 @@ def reset(count=3):
             cid='C{:03d}'.format(number+1);filename=samples[number%len(samples)]
             content = (ROOT / filename).read_text(encoding='utf-8-sig')
             contracts[cid] = {'id':cid,'name':filename,'content':content,
+                              'stance':None if cid==clear_stance else ['party_a','party_b','party_a'][number%3],
                               'size':len(content.encode('utf-8')),'result':None,
                               'due_date':datetime.now(timezone(timedelta(hours=8))).date().isoformat()}
     return {'ok':True,'count':count}
@@ -117,7 +118,9 @@ def result(contract_id: str, body: ResultBody):
 
 
 @app.post('/api/reset')
-def reset_api(count: int=Query(default=3,ge=0,le=100)):return reset(count)
+def reset_api(count: int=Query(default=3,ge=0,le=100),clear_stance: str=Query(default=None,pattern=r'^C\d{3}$')):
+    """Test-only override; default sample stances remain unchanged."""
+    return reset(count,clear_stance)
 
 
 # Keep REST routes first, and start the mounted SDK lifespan above.

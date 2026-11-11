@@ -510,6 +510,26 @@ Vue 上传流程：选择文件 → 调用无状态 `/parse/preview` → 展示�
 
 worker 的 unit_committed 日志包含 committed_at、merge_ms（合并查询、计算与flush）和 checkpoint_ms（结果事务及独立进度事务），便于区分模型响应波动与数据库提交耗时。验收同时每500ms检查readiness；无503能证明该次运行的可用性，不能单凭一次成功运行确定历史503的唯一根因。
 
+## Agent 运行记录
+
+`agent_runs` 保存运行状态、创建者、时间和用量，`agent_steps` 按运行与轮次保存时间线。每轮以短事务保存步骤，完成后更新同一条记录。步骤摘要的数据库约束为 200 字，`review_task_id` 指向原审查任务，完整审查结果仍从该任务读取。
+
+服务重启后，已完成记录和已提交步骤可继续查询。尚未结束的运行标记为中断，保留已产生的工单与审查任务。历史 JSON 导入按运行 ID 去重，原文件作为备份保留。无法从旧记录可靠识别的单步 token 用量保留空值。法律检索历史通过法规条目引用显示原文。
+
+## Agent 本地工具与立场待办
+
+采用本地工具注册加远端 MCP 工具的方案：OA 只暴露 list_contracts、get_contract、write_result；Agent 合并 review_contract、search_law 为同一个 Function Calling 工具目录。没有新增 MCP 进程。模型选择工具，服务端验证参数、目标范围和权限；审查仍创建原有 ReviewTask，由原有 worker 执行。review_contract 默认等待最多 600 秒，不在数据库事务里等待；search_law 仅检索已核对启用的法规，返回原始 BM25 分数。
+
+立场优先级为用户明确指令、OA stance、组织匹配。模型不能凭空补甲方。未知时 Contract.party_stance 为 NULL，创建 needs_stance 工单，不创建审查任务；GET 工单展示从正文解析的当事方。reviewer/admin 通过 POST /tickets/{id}/stance 指定立场，短事务内保存立场、创建全部 10＋5 规则的任务并绑定工单，转 reviewing。非 needs_stance 返回 409，requester 返回 403，不可见资源返回 404。任务完成后沿用原有高风险回写逻辑，不自动替法务确认风险。
+
+needs_stance 是一次成功的人工交接，Agent 不写回虚构审查结果，也不阻断批量其他合同。完成摘要分别统计已写回和待明确立场的数量；两者均处理后可结束 Agent。原待办的历史 Agent 摘要保留当时状态，通过 ticket_path 查看当前进度。工单列表先排待明确立场，再排待确认风险；计数按当前用户的可见性计算。
+
+已完成的法务立场待办可显式复用真实审查：来源 endpoint、OA ID、原文 SHA256、立场、10＋5 规则、提示词版本、模型、分词器版本、全部有效知识块及内容哈希必须一致，原任务必须 completed，原工单必须 done/needs_human。返回 reused=true、同一个 task_id 和 ticket_id，不新增审查日志；原高风险工单仍待确认。普通历史 OA 审查不适用该复用路径。规划用量、实际新审查用量分别记账，复用不重复累计原用量。
+
+mock-oa 默认 C001/C002/C003 的 stance 为 party_a/party_b/party_a。仅测试接口 POST /api/reset?clear_stance=C002 可清空指定合同立场；恢复默认用 POST /api/reset。该开关只改变内存样本，不修改正式合同或历史任务。
+
+Windows 宿主与 Linux 容器不应同时直接打开同一 WAL 数据库。本轮验收改用容器内 SQLite 查询日志，宿主仅调 HTTP 和读取导出的 JSON；避免跨系统共享 WAL/SHM 的生命周期。此注意事项来自本轮验收中的实际故障与恢复，不把它当作此前所有数据库错误的唯一根因。
+
 ## 三角色与服务端数据隔离
 
 admin和reviewer全量可见合同与工单；requester分别按Contract.owner_id和Ticket.requester_id过滤。合同比工单独立授权，任务、结果和报告通过关联合同判断可见性。复核人字段继续保留，但不再限制reviewer的法务视野。会话不随法务视野放开，仅创建者本人或admin可以访问；工单详情中的会话消息也遵守该限制。

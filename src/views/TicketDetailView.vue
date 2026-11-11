@@ -56,7 +56,7 @@ async function load() {
     if (alive) loading.value = false;
   }
 }
-async function action(kind) {
+async function action(kind, stance) {
   if (busy.value) return;
   busy.value = true;
   error.value = "";
@@ -65,6 +65,7 @@ async function action(kind) {
       confirm: (key) => api.confirmTicket(key, confirmationNote.value),
       review: api.reviewTicket,
       close: api.closeTicket,
+      stance: (key) => api.setTicketStance(key, stance),
     }[kind](id);
     await load();
     if (kind === "confirm") success.value = "已人工确认通过。";
@@ -130,7 +131,7 @@ onUnmounted(() => {
         ><button
           v-if="
             canClose &&
-            !['closed', 'reviewing', 'needs_human'].includes(ticket.status)
+            !['closed', 'needs_stance', 'reviewing', 'needs_human'].includes(ticket.status)
           "
           :disabled="busy"
           @click="action('close')"
@@ -152,6 +153,14 @@ onUnmounted(() => {
         已人工确认 · {{ formatTime(ticket.confirmed_at) }} ·
         {{ ticket.confirmation_note }}
       </p>
+    </section>
+    <section v-if="ticket.status === 'needs_stance'" class="panel human-warning" role="status">
+      <h2>需明确我方立场</h2>
+      <p>检测到合同当事方：甲方 {{ ticket.detected_parties?.party_a_name || '未识别' }} / 乙方 {{ ticket.detected_parties?.party_b_name || '未识别' }}</p>
+      <template v-if="canOperate"><p>我方是？选定后自动开始审查。</p><div class="actions">
+        <button class="primary" :disabled="busy" @click="action('stance','party_a')">甲方</button>
+        <button :disabled="busy" @click="action('stance','party_b')">乙方</button>
+      </div></template><p v-else>已交法务明确立场，尚未触发审查。</p>
     </section>
     <section
       v-if="ticket.status === 'needs_human'"

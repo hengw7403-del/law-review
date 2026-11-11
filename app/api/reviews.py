@@ -1,6 +1,6 @@
 """Task creation, progress polling and Markdown export for local development."""
 
-from typing import List, Optional
+from typing import List, Optional, Literal
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, Response
@@ -24,6 +24,7 @@ def items(task_id: str, user=Depends(current_user)):
 
 
 class ReviewRequest(BaseModel):
+    party_stance: Optional[Literal['party_a','party_b']] = None
     max_clauses: Optional[int] = Field(default=None, ge=1, le=200, strict=True)
     rules: List[str] = Field(default_factory=lambda: ["liability", "payment", "dispute_resolution"], max_length=3)
     missing_rules: List[str] = Field(default_factory=list, max_length=5)
@@ -38,9 +39,13 @@ def start_review(contract_id: str, body: Optional[ReviewRequest] = None, user=De
     body = body or ReviewRequest()
     try:
         authorize_contract(db.SessionLocal, contract_id, user)
-        result = create_review(db.SessionLocal, contract_id, body.max_clauses, body.rules, body.missing_rules, created_by=user.id)
+        result = create_review(db.SessionLocal, contract_id, body.max_clauses, body.rules, body.missing_rules, created_by=user.id, party_stance=body.party_stance)
         return JSONResponse(status_code=202, content=result)
     except ReviewError as error:
+        if error.code == 'STANCE_REQUIRED':
+            from app.services.tickets import stance_pending
+            ticket_id = stance_pending(db.SessionLocal, contract_id, user, '合同审查：待法务明确我方立场')
+            return JSONResponse(status_code=202, content={'status':'needs_stance','ticket_id':ticket_id,'task_id':None})
         return error_response(error)
     except ValueError as error:
         return JSONResponse(status_code=422, content={"error": {"code": "INVALID_REVIEW_OPTIONS", "message": str(error)}})

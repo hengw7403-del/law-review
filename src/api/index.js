@@ -56,9 +56,16 @@ const id = encodeURIComponent;
 export const api = {
   startAgent: (requestText) => request('/agent/run', { method: 'POST', json: { request: requestText } }),
   agentRun: (key) => request(`/agent/runs/${id(key)}`),
+  agentRuns: ({ limit = 20, status = '', created_by = '' } = {}) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (status) params.set('status', status);
+    if (created_by) params.set('created_by', created_by);
+    return request('/agent/runs?' + params);
+  },
   dashboard: () => request('/dashboard/summary'),
   users: () => request('/admin/users'),
   knowledge: () => request('/admin/knowledge'),
+  setTicketStance: (key, stance) => request(`/tickets/${encodeURIComponent(key)}/stance`, { method: 'POST', json: { stance } }),
   confirmTicket: (key, note = "") =>
     request(`/tickets/${id(key)}/confirm`, { method: "POST", json: { note } }),
   abandonConversation: (key) =>

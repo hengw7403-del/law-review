@@ -6,6 +6,45 @@ from sqlalchemy import Text, inspect
 from sqlalchemy.engine import Engine
 
 
+def add_agent_tables(engine: Engine) -> None:
+    """Additive, idempotent; do not alter existing review/ticket records."""
+    from app.models import AgentRun, AgentStep
+    AgentRun.__table__.create(bind=engine, checkfirst=True)
+    AgentStep.__table__.create(bind=engine, checkfirst=True)
+
+
+def agent_stance_handoff(engine: Engine) -> None:
+    """Idempotent parent rebuild; preserve IDs, children and foreign keys."""
+    from app.models import Contract, Ticket
+    with engine.connect() as connection:
+        connection.exec_driver_sql('PRAGMA foreign_keys=OFF')
+        connection.commit()
+        try:
+            connection.exec_driver_sql('BEGIN IMMEDIATE')
+            columns = {c['name'] for c in inspect(connection).get_columns('tickets')}
+            for name in ('source_system', 'source_contract_id', 'source_content_hash', 'agent_run_id'):
+                if name not in columns:
+                    connection.exec_driver_sql('ALTER TABLE tickets ADD COLUMN '+name+' TEXT')
+            operations = Operations(MigrationContext.configure(connection))
+            checks = inspect(connection).get_check_constraints('tickets')
+            if not any("'needs_stance'" in c['sqltext'] for c in checks):
+                with operations.batch_alter_table('tickets', copy_from=Ticket.__table__, recreate='always'):
+                    pass
+            stance = next(c for c in inspect(connection).get_columns('contracts') if c['name']=='party_stance')
+            if not stance['nullable']:
+                with operations.batch_alter_table('contracts', copy_from=Contract.__table__, recreate='always'):
+                    pass
+            if connection.exec_driver_sql('PRAGMA foreign_key_check').all():
+                raise RuntimeError('Stance migration foreign-key validation failed')
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.exec_driver_sql('PRAGMA foreign_keys=ON')
+            connection.commit()
+
+
 def add_user_org_name(engine: Engine) -> None:
     with engine.begin() as connection:
         if "org_name" not in {c["name"] for c in inspect(connection).get_columns("users")}:

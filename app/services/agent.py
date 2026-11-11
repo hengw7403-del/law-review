@@ -1,4 +1,4 @@
-"""Bounded Agent coordinator; independent daemon threads and atomic run files.
+"""Bounded Agent coordinator; independent threads and database checkpoints.
 
 Existing contract/review services and the normal worker perform the review.
 No model or MCP HTTP call holds a database session/transaction open.
@@ -17,7 +17,8 @@ from sqlalchemy import func, or_, select
 
 from app import db
 from app.models import LLMLog, ReviewTask
-from app.prompts.agent import SYSTEM, REVIEW_TOOL
+from app.prompts.agent import SYSTEM, REVIEW_TOOL, SEARCH_TOOL
+from app.services.agent_tools import search_law, reusable_handoff, content_hash
 from app.services.agent_llm import AgentLLMClient
 from app.services.contracts import create_contract
 from app.services.llm import CallContext, LLMBudgetExceeded
@@ -61,6 +62,7 @@ def round_stats(run):
     return {'rounds_used':len(run.get('steps',[])),
             'rounds_limit':max_rounds(len(targets) if targets is not None else None),
             'contracts_processed':processed,'contracts_total':total,
+            'contracts_pending_stance':sum(v.get('status')=='needs_stance' for v in state.get('reviews',{}).values()),
             'stopped_reason':run.get('stopped_reason')}
 
 
@@ -74,37 +76,7 @@ def require_agent_role(user):
     if user.role not in {'admin','reviewer'}:raise HTTPException(403,'仅法务和管理员可使用AI助手')
 
 
-class AgentStore:
-    def __init__(self,root=None):
-        self.root=Path(root or os.environ.get('AGENT_RUN_DIR',str(db.PROJECT_ROOT/'work/agent-runs')))
-        self.root.mkdir(parents=True,exist_ok=True);self.lock=threading.RLock()
-
-    def path(self,key):
-        if not re.fullmatch('[0-9a-f]{32}',key):raise HTTPException(404,'执行记录不存在')
-        return self.root/(key+'.json')
-
-    def save(self,run):
-        with self.lock:
-            if run.get('round_policy')=='dynamic-v1':run.update(round_stats(run))
-            run['updated_at']=utc_now();path=self.path(run['run_id'])
-            temporary=path.with_suffix('.'+uuid.uuid4().hex+'.tmp')
-            temporary.write_text(json.dumps(run,ensure_ascii=False),encoding='utf-8')
-            temporary.replace(path)
-
-    def read(self,key,user=None):
-        with self.lock:
-            path=self.path(key)
-            if not path.exists():raise HTTPException(404,'执行记录不存在')
-            run=json.loads(path.read_text(encoding='utf-8'))
-        if user is not None and user.role!='admin' and run['user_id']!=user.id:raise HTTPException(404,'执行记录不存在')
-        return run
-
-    def recover(self):
-        for path in self.root.glob('*.json'):
-            run=json.loads(path.read_text(encoding='utf-8'))
-            if run['status']=='running':
-                run.update(status='failed',partial=True,error_code='AGENT_INTERRUPTED',stopped_reason='AGENT_INTERRUPTED',summary='服务重启，Agent已中断；已有审查任务及结果保留，未自动重试或写回。')
-                self.save(run)
+from app.services.agent_store import AgentStore
 
 
 def costs(session_factory,run_id):
@@ -141,6 +113,13 @@ class AgentRunner:
 
     def review(self,run,user,args):
         cid=args.get('contract_id');state=run['state']
+        if set(args)-{'contract_id','stance','party_stance'} or not isinstance(cid,str):
+            raise MCPError('INVALID_TOOL_ARGUMENTS','review_contract需要contract_id与可选stance')
+        requested=args.get('stance',args.get('party_stance'))
+        if 'stance' in args and 'party_stance' in args and args['stance']!=args['party_stance']:
+            raise MCPError('INVALID_TOOL_ARGUMENTS','stance与party_stance不能冲突')
+        if requested is not None and requested not in {'party_a','party_b'}:
+            raise MCPError('INVALID_TOOL_ARGUMENTS','stance只能为party_a或party_b')
         if cid not in state['fetched']:raise MCPError('GET_CONTRACT_FIRST','请先get_contract获取该合同')
         source=state['fetched'][cid]
         if cid not in state['reviews']:
@@ -149,21 +128,43 @@ class AgentRunner:
             suggested=party_detection(source['content'],user.org_name)['suggested_stance']
             # The model may pass a stance only if the user explicitly supplied it.
             stated=set(re.findall(r'(?:我方(?:立场)?(?:是|为)?\s*[:：]?\s*|站在)(甲方|乙方)',run['request']))
-            stated.update(re.findall(r'(甲方|乙方)立场',run['request']))
+            # A reference to another task's historic stance is not an instruction
+            # to apply that stance to every contract in the batch.
+            stated.update(re.findall(r'(?:^|[，,；;\s])(?:按|用|采用|使用|站在)?(甲方|乙方)立场(?:审查|审核|审阅)?(?=[，,。；;\s]|$)',run['request']))
             stated.update({'甲方' if v=='party_a' else '乙方' for v in re.findall(r'\bparty_[ab]\b',run['request'])})
             if len(stated)>1:raise MCPError('STANCE_REQUIRED','请求中包含多个我方立场，请明确后重新发起')
             explicit=('party_a' if '甲方' in stated else 'party_b') if stated else None
             requested_ids=set(x.upper() for x in re.findall(r'\bC\d{3}\b',run['request'],re.I))
-            if requested_ids and cid not in requested_ids:raise MCPError('TARGET_MISMATCH','该合同不在用户指定的审查目标中')
-            if args.get('party_stance') and args['party_stance']!=explicit:
+            if requested_ids and not re.search('都|全部|所有',run['request']) and cid not in requested_ids:
+                raise MCPError('TARGET_MISMATCH','该合同不在用户指定的审查目标中')
+            source_stance=source.get('stance')
+            if source_stance is not None and source_stance not in {'party_a','party_b'}:
+                raise MCPError('INVALID_OA_DATA','OA立场字段无效')
+            stance=explicit or source_stance or suggested
+            if requested and requested!=stance:
                 raise MCPError('STANCE_REQUIRED','不能由模型自行选择立场；请按组织匹配或让用户明确甲乙方')
-            stance=explicit or suggested
-            if not stance:raise MCPError('STANCE_REQUIRED','组织未匹配合同当事方，请让用户明确我方甲乙方立场后重新发起')
+            endpoint=state.get('source_system','unknown')
+            reusable=reusable_handoff(self.sf,endpoint,cid,source,stance,user) if stance else None
+            if reusable:
+                state['reviews'][cid]=reusable
+            else:
+                uploaded=create_contract(self.sf,user,source.get('name','oa-contract.txt'),source['content'].encode('utf-8'),stance,
+                                         'OA '+cid+' · '+source.get('name',cid))
+            if not stance:
+                from app.services.tickets import stance_pending
+                ticket_id=stance_pending(self.sf,uploaded['contract_id'],user,run['request'],source_system=endpoint,
+                    source_contract_id=cid,source_content_hash=content_hash(source),agent_run_id=run['run_id'])
+                state['reviews'][cid]={'contract_id':uploaded['contract_id'],'status':'needs_stance',
+                    'ticket_id':ticket_id,'task_id':None,'party_stance':None}
+                self.store.save(run)
+                return {'contract_id':cid,'status':'needs_stance','ticket_id':ticket_id,
+                        'summary':'已交法务明确我方立场，尚未审查'}
+        if state['reviews'].get(cid,{}).get('status')=='needs_stance':
+            return {'contract_id':cid,**state['reviews'][cid]}
+        if cid not in state['reviews']:
             cost=self.check_budget(run)
             reserve=max(1,round_stats(run)['rounds_limit']-len(run['steps']))
             remaining=MAX_MODEL_CALLS-cost['total_model_calls']-reserve
-            uploaded=create_contract(self.sf,user,source.get('name','oa-contract.txt'),source['content'].encode('utf-8'),stance,
-                                     'OA '+cid+' · '+source.get('name',cid))
             def cap(s,task_id):
                 task=s.get(ReviewTask,task_id);snapshot=json.loads(task.input_snapshot)
                 if len(snapshot['plan'])>remaining:raise LLMBudgetExceeded('剩余调用预算不足以完整审查此合同')
@@ -186,6 +187,7 @@ class AgentRunner:
         if task['status']!='completed':raise MCPError('REVIEW_INCOMPLETE','审查未全部完成，不能作为完整结果写回OA')
         result=review_items(self.sf,entry['task_id'])
         canonical={'task_id':entry['task_id'],'contract_id':entry['contract_id'],'party_stance':entry['party_stance'],
+                   'reused':entry.get('reused',False),'ticket_id':entry.get('ticket_id'),
                    'status':task['status'],'stats':result['stats'],'processed_items':task['processed_items'],
                    'total_items':task['total_items'],'result_path':'/workspace/results/'+entry['task_id'],
                    'all_clauses_insufficient':result.get('all_clauses_insufficient',False),
@@ -193,10 +195,18 @@ class AgentRunner:
                                 'description':i['description'],'suggestion':i['suggestion'],'evidence':i['evidence']}
                                for i in result['items'] if i['check_status']=='supported']}
         entry['result']=canonical;self.store.save(run)
-        return {'contract_id':cid,'result':canonical}
+        return {'contract_id':cid,'status':task['status'],
+                'high':result['stats']['high'],'medium':result['stats']['medium'],'low':result['stats']['low'],
+                'summary':'审查完成，高风险{}、中风险{}、低风险{}'.format(result['stats']['high'],result['stats']['medium'],result['stats']['low']),
+                'result':canonical}
 
     def dispatch(self,run,user,client,name,args,external_names):
+        # Local capabilities share the tool catalog with MCP; no second server.
         if name=='review_contract':return self.review(run,user,args)
+        if name=='search_law':
+            result=search_law(self.sf,args)
+            run['state']['search_results']=result
+            return result
         if name not in external_names:raise MCPError('UNKNOWN_TOOL','工具不存在，请从可用工具中选择')
         if name=='write_result':
             cid=args.get('contract_id');entry=run['state']['reviews'].get(cid,{})
@@ -224,6 +234,9 @@ class AgentRunner:
     @staticmethod
     def factual_summary(run):
         state=run['state'];reviews=[v for v in state['reviews'].values() if v.get('result')]
+        waiting=sum(v.get('status')=='needs_stance' for v in state['reviews'].values())
+        if waiting:return '{}份完成，{}份待明确立场；已写回OA {}份。'.format(len(state['written']),waiting,len(state['written']))
+        if 'search_results' in state:return '检索到{}条法规依据。'.format(len(state['search_results']))
         if reviews:
             high=sum(v['result']['stats'].get('high',0)>0 for v in reviews)
             return '已完成{}份合同审查，其中{}份有高风险；已写回OA {}份。'.format(len(reviews),high,len(state['written']))
@@ -241,11 +254,11 @@ class AgentRunner:
         existing 50k-token budget without changing review prompts or rules.
         """
         if name=='get_contract' and isinstance(result,dict) and 'content' in result:
-            return {k:result[k] for k in ['id','name','size'] if k in result} | {'content_received':True,'content_length':len(result['content'])}
+            return {k:result[k] for k in ['id','name','size','stance'] if k in result} | {'content_received':True,'content_length':len(result['content'])}
         if name=='review_contract' and isinstance(result,dict) and 'result' in result:
             value=result['result']
             return {'contract_id':result.get('contract_id'),
-                    'result':{k:value[k] for k in ['task_id','contract_id','status','stats','result_path'] if k in value}}
+                    'result':{k:value[k] for k in ['task_id','contract_id','status','stats','result_path','reused','ticket_id'] if k in value}}
         return result
 
     @staticmethod
@@ -263,8 +276,9 @@ class AgentRunner:
         run.update(round_policy='dynamic-v1',stopped_reason=None)
         try:
             client=self.client_factory();external=client.list_tools()
-            if any(t.get('name')=='review_contract' for t in external):raise MCPError('TOOL_NAME_COLLISION','外部工具与本地审查工具重名')
-            tools=client.function_definitions(external)+[REVIEW_TOOL];names={t['name'] for t in external}
+            if any(t.get('name') in {'review_contract','search_law'} for t in external):raise MCPError('TOOL_NAME_COLLISION','外部工具与本地工具重名')
+            run['state']['source_system']=getattr(client,'endpoint','unknown')
+            tools=client.function_definitions(external)+[REVIEW_TOOL,SEARCH_TOOL];names={t['name'] for t in external}
             run['tools']=[t['function']['name'] for t in tools];self.store.save(run)
             messages=[{'role':'system','content':SYSTEM},{'role':'user','content':run['request']}]
             llm=self.llm_factory(self.sf)
@@ -273,21 +287,27 @@ class AgentRunner:
                     raise MCPError('MAX_ROUNDS_REACHED',self.limit_summary(run))
                 if self.stop.is_set():raise MCPError('AGENT_INTERRUPTED','服务停止，已有结果保留')
                 messages[0]['content']=SYSTEM+'\n当前执行预算：'+json.dumps(round_stats(run),ensure_ascii=False)
-                self.check_budget(run,messages,tools);self.store.save(run)
+                before=self.check_budget(run,messages,tools)['planning']['known_tokens'];self.store.save(run)
                 context=CallContext('agent:'+key+':'+uuid.uuid4().hex,purpose='agent')
                 message=llm.decide(messages,tools,context)
+                planning_delta=costs(self.sf,key)['planning']['known_tokens']-before
                 messages.append(message);calls=message.get('tool_calls') or []
                 if not calls:
                     run['model_summary']=message.get('content','')
                     if re.search('审一下|审查|审一遍|审阅|审核',run['request']) and not run['state']['reviews'] and run['state']['listed']!=[]:
                         raise MCPError('REVIEW_NOT_EXECUTED','尚未完成真实审查')
-                    if run['state']['reviews'] and len(run['state']['written'])<len(run['state']['reviews']):
+                    deferred={cid for cid,v in run['state']['reviews'].items() if v.get('status')=='needs_stance'}
+                    handled=set(run['state']['written'])|deferred
+                    if run['state']['reviews'] and not set(run['state']['reviews']).issubset(handled):
                         raise MCPError('WRITEBACK_INCOMPLETE','审查或写回尚未完成')
                     if run['state']['reviews'] and re.search('都|全部|所有',run['request']):
                         targets=run['state']['listed']
-                        if targets is None or not {c['id'] for c in targets}.issubset(run['state']['written']):
+                        if targets is None or not {c['id'] for c in targets}.issubset(handled):
                             raise MCPError('PARTIAL_REVIEW','尚未完成全部OA合同的审查和写回')
-                    run.update(status='completed',summary=self.factual_summary(run));break
+                    run.update(status='completed',summary=self.factual_summary(run))
+                    if 'search_results' in run['state']:
+                        run['answer']=message.get('content','');run['search_results']=run['state']['search_results']
+                    break
                 # Recheck after EVERY tool: the first list can change the limit
                 # even inside a model response containing multiple tool calls.
                 for call in calls:
@@ -295,9 +315,11 @@ class AgentRunner:
                         raise MCPError('MAX_ROUNDS_REACHED',self.limit_summary(run))
                     function=call.get('function',{});name=function.get('name','')
                     step={'round':len(run['steps'])+1,'max_rounds':round_stats(run)['rounds_limit'],
+                          'tokens':planning_delta,
                           'decision':'call '+name,'tool':name,'args':{},'result_ok':None,
                           'status':'running','result_summary':'正在执行','started_at':utc_now()}
                     run['steps'].append(step);self.store.save(run)
+                    planning_delta=0
                     try:
                         args=json.loads(function.get('arguments','{}'))
                         if not isinstance(args,dict):raise ValueError('工具参数必须是JSON对象')
@@ -306,10 +328,15 @@ class AgentRunner:
                         result=self.dispatch(run,user,client,name,args,names)
                         if name=='list_contracts':summary='找到{}份合同'.format(len(result))
                         elif name=='get_contract':summary='拿到{}正文，{}字符'.format(args.get('contract_id'),len(result['content']))
-                        elif name=='review_contract':summary='审查完成，发现{}处高风险'.format(result['result']['stats']['high'])
+                        elif name=='review_contract':summary=('待法务明确立场' if result.get('status')=='needs_stance' else
+                            ('复用真实审查，' if result['result'].get('reused') else '审查完成，')+'发现{}处高风险'.format(result['result']['stats']['high']))
+                        elif name=='search_law':summary='检索到{}条法规'.format(len(result))
                         elif name=='write_result':summary='已写回OA'
                         else:summary='工具执行成功'
                         step.update(status='completed',result_summary=summary,result_ok=True)
+                        if name=='review_contract':
+                            value=result.get('result',result)
+                            step.update(reused=value.get('reused',False),task_id=value.get('task_id'),ticket_id=value.get('ticket_id'))
                     except LLMBudgetExceeded:
                         raise
                     except Exception as exc:
@@ -321,7 +348,7 @@ class AgentRunner:
                     messages.append({'role':'tool','tool_call_id':call['id'],
                                      'content':json.dumps(self.planning_result(name,result),ensure_ascii=False)})
         except Exception as exc:
-            run.update(status='failed',partial=True,error_code=getattr(exc,'code',type(exc).__name__),
+            run.update(status='partial' if run['state'].get('written') else 'failed',partial=True,error_code=getattr(exc,'code',type(exc).__name__),
                        stopped_reason=getattr(exc,'code',type(exc).__name__),
                        summary=self.factual_summary(run)+' 未完成：'+str(exc))
             if run['error_code']=='MAX_ROUNDS_REACHED':run['summary']=self.limit_summary(run)
@@ -338,7 +365,7 @@ class AgentRunner:
 
 class AgentManager:
     def __init__(self,store=None,session_factory=None,runner_factory=AgentRunner):
-        self.store=store or AgentStore();self.sf=session_factory or db.SessionLocal
+        self.sf=session_factory or db.SessionLocal;self.store=store or AgentStore(session_factory=self.sf)
         self.runner_factory=runner_factory;self.lock=threading.Lock();self.active=set();self.stop=threading.Event()
         self.store.recover()
 
@@ -373,7 +400,11 @@ class AgentManager:
                     'contracts_processed':len(run['state']['written']),'contracts_total':None,
                     'stopped_reason':run.get('error_code') if run['status']=='failed' else None}.items():fields.setdefault(k,v)
         fields['cost']=costs(self.sf,key)
-        fields['details']=[{'oa_contract_id':cid,'task_id':entry['task_id'],'contract_id':entry['contract_id'],
-                           'result_path':'/workspace/results/'+entry['task_id']}
+        fields.update(self.store.record_cost(key,fields['cost']))
+        fields['details']=[{'oa_contract_id':cid,'task_id':entry.get('task_id'),'contract_id':entry['contract_id'],
+                           'reused':entry.get('reused',False),'status':entry.get('status','completed' if entry.get('result') else 'reviewing'),
+                           'ticket_id':entry.get('ticket_id'),
+                           'ticket_path':'/workspace/tickets/'+entry['ticket_id'] if entry.get('ticket_id') else None,
+                           'result_path':'/workspace/results/'+entry['task_id'] if entry.get('task_id') else None}
                           for cid,entry in run['state']['reviews'].items()]
         return fields

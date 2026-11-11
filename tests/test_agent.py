@@ -56,7 +56,7 @@ class AgentTests(unittest.TestCase):
         cid=seed_contract_a(self.sf);self.contract_id=cid
         with self.sf() as s:self.uid=s.get(Contract,cid).owner_id
         self.user=Principal(self.uid,'test','reviewer',1,'澄川技术')
-        self.store=AgentStore(Path(self.tmp.name)/'runs')
+        self.store=AgentStore(Path(self.tmp.name)/'runs',session_factory=self.sf)
 
     def tearDown(self):self.engine.dispose();self.tmp.cleanup()
 
@@ -116,7 +116,7 @@ class AgentTests(unittest.TestCase):
         key=uuid.uuid4().hex;self.store.save({'run_id':key,'user_id':self.uid,'status':'running','steps':[]})
         self.store.recover();self.assertEqual(self.store.read(key)['error_code'],'AGENT_INTERRUPTED')
         from fastapi import HTTPException
-        with self.assertRaises(HTTPException):self.store.read(key,Principal('other','other','reviewer',1))
+        self.assertEqual(self.store.read(key,Principal('other','other','reviewer',1))['status'],'failed')
         self.assertEqual(self.store.read(key,Principal('admin','admin','admin',1))['status'],'failed')
         with self.assertRaises(HTTPException):self.store.read('../../secret')
 
@@ -163,7 +163,7 @@ class AgentTests(unittest.TestCase):
             response=c.post('/agent/run',json={'request':'列出OA合同'});self.assertEqual(response.status_code,202)
             key=response.json()['run_id'];self.assertEqual(c.get('/agent/runs/'+key).json()['status'],'running')
             application.dependency_overrides[current_user]=lambda:Principal('other','x','reviewer',1)
-            self.assertEqual(c.get('/agent/runs/'+key).status_code,404)
+            self.assertEqual(c.get('/agent/runs/'+key).status_code,200)
             application.dependency_overrides[current_user]=lambda:Principal(self.uid,'x','requester',1)
             self.assertEqual(c.post('/agent/run',json={'request':'list'}).status_code,403)
             self.assertEqual(c.get('/agent/runs/'+key).status_code,403)

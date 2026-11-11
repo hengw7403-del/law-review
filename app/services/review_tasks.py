@@ -28,7 +28,7 @@ def utc_now() -> str:
 
 def create_review(session_factory, contract_id: str, max_clauses: Optional[int] = None,
                   rules: Optional[Sequence[str]] = None, missing_rules: Optional[Sequence[str]] = None,
-                  created_by: Optional[str] = None, _on_created=None) -> Dict[str, Any]:
+                  created_by: Optional[str] = None, _on_created=None, party_stance: Optional[str] = None) -> Dict[str, Any]:
     selected_rules = normalize_rules(rules) if rules else ([] if rules == [] else ["liability", "payment", "dispute_resolution"])
     missing_rules = list(missing_rules or [])
     # Validate limits even when a duplicate is submitted.
@@ -42,7 +42,20 @@ def create_review(session_factory, contract_id: str, max_clauses: Optional[int] 
             ReviewTask.contract_id == contract_id, ReviewTask.status.in_(["queued", "running"])
         )).scalar_one_or_none()
         if existing:
+            if party_stance and json.loads(existing.input_snapshot)['contract']['stance'] != party_stance:
+                raise ReviewError('ACTIVE_STANCE_CONFLICT', '已有不同立场的活动审查任务', 409)
             return {"task_id": existing.id, "deduplicated": True}
+        if party_stance is not None and party_stance not in {'party_a','party_b'}:
+            raise ValueError('立场必须为party_a或party_b')
+        stance = party_stance or contract.party_stance
+        if not stance:
+            from app.models import User
+            from app.services.party_parser import party_detection
+            owner = session.get(User, created_by or contract.owner_id)
+            stance = party_detection(contract.raw_text or '', owner.org_name if owner else None)['suggested_stance']
+        if not stance:
+            raise ReviewError('STANCE_REQUIRED', '未匹配到我方组织，请法务明确立场', 409)
+        contract.party_stance = stance
         if contract.parse_status != "parsed":
             raise ReviewError("CONTRACT_NOT_PARSED", "合同未解析完成")
         if json.loads(contract.parse_warnings or "[]") and not contract.parse_confirmed_at:

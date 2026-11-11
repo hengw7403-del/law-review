@@ -60,6 +60,7 @@ async function review() {
   error.value = "";
   try {
     const data = await api.review(id);
+    if (data.status === 'needs_stance') { window.location.assign('/workspace/tickets/' + data.ticket_id); return; }
     await poll(data.task_id);
   } catch (e) {
     error.value = e.message;
@@ -89,7 +90,7 @@ onUnmounted(() => {
       <StatusBadge :status="task?.status || contract.parse_status" />
     </header>
     <p class="muted">
-      {{ contract.party_stance === "party_a" ? "甲方" : "乙方" }} ·
+      {{ { party_a: '甲方', party_b: '乙方' }[contract.party_stance] || '待明确立场' }} ·
       {{ contract.clause_count }} 条 · v{{ contract.version }}
     </p>
     <StatusBadge :status="contract.parse_status" />

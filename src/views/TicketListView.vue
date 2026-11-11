@@ -6,6 +6,7 @@ import EmptyState from "../components/EmptyState.vue";
 import Toast from "../components/Toast.vue";
 import { useUserStore } from "../stores/user.js";
 const user = useUserStore();
+const counts = ref({});
 import { formatTime, ticketNumber, focusLabel } from "../utils/format.js";
 const tickets = ref([]),
   status = ref(""),
@@ -18,7 +19,7 @@ async function load() {
   error.value = "";
   try {
     const data = await api.tickets(status.value);
-    if (current === sequence) tickets.value = data.tickets;
+    if (current === sequence) { tickets.value = data.tickets; counts.value = data.counts || {}; }
   } catch (e) {
     if (current === sequence) error.value = e.message;
   } finally {
@@ -41,12 +42,13 @@ onMounted(load);
     <button
       v-for="[value, label] in [
         ['', '全部'],
+        ['needs_stance', '需明确立场 ' + (counts.needs_stance || 0)],
+        ['needs_human', '需确认风险 ' + (counts.needs_human || 0)],
         ['reviewing', '审查中'],
-        ['needs_human', '待人工确认'],
         ['done', '已完成'],
       ]"
       :key="value"
-      :class="{ primary: status === value }"
+      :class="{ primary: status === value, 'attention-filter': ['needs_stance','needs_human'].includes(value) }"
       :aria-pressed="status === value"
       @click="
         status = value;
@@ -67,7 +69,7 @@ onMounted(load);
     v-for="ticket in tickets"
     :key="ticket.id"
     class="panel ticket-card"
-    :class="{ 'needs-human': ticket.status === 'needs_human' }"
+    :class="{ 'needs-human': ['needs_human','needs_stance'].includes(ticket.status) }"
     :to="{ name: 'ticket', params: { id: ticket.id } }"
     ><div class="page-head">
       <h2>{{ ticket.title }}</h2>

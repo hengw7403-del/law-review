@@ -9,6 +9,54 @@ from app.services.conversations import history,costs
 from app.services.review_tasks import create_review,utc_now,ReviewError,task_metrics
 from app.services.review_rules import CLAUSE_RULES,MISSING_RULES
 
+def stance_pending(sf, contract_id, user, raw_request, **origin):
+    """No guessed stance and no task: legal staff must explicitly choose first."""
+    from app.services.party_parser import party_detection
+    from app.services.ticket_title import ticket_title
+    with sf.begin() as s:
+        s.execute(text('BEGIN IMMEDIATE'))
+        contract=visible_contract(s,contract_id,user)
+        existing=s.scalar(select(Ticket).where(Ticket.contract_id==contract_id,Ticket.status=='needs_stance'))
+        if existing:return existing.id
+        detected=party_detection(contract.raw_text or '',None)['detected_parties']
+        key=uuid.uuid4().hex
+        s.add(Ticket(id=key,title=ticket_title(contract),contract_id=contract_id,requester_id=user.id,
+            status='needs_stance',raw_request=raw_request,
+            needs_human_reason='未匹配到我方组织：检测到甲方 {} / 乙方 {}'.format(
+                detected['party_a_name'] or '未识别',detected['party_b_name'] or '未识别'),
+            **origin))
+        return key
+
+
+def set_stance(key,user,stance):
+    if user.role not in {'reviewer','admin'}:raise HTTPException(403,'角色不足')
+    if stance not in {'party_a','party_b'}:raise HTTPException(422,'无效立场')
+    with db.SessionLocal() as s:
+        row=visible(s,key,user)
+        if row.status!='needs_stance':raise HTTPException(409,'只有待明确立场的工单可以指定立场')
+        contract_id=row.contract_id
+    def bind(s,task_id):
+        row=s.get(Ticket,key)
+        if row.status!='needs_stance':raise HTTPException(409,'工单状态已变化')
+        row.review_task_id=task_id;row.status='reviewing';row.review_error=None
+        row.needs_human_reason=None;row.updated_at=utc_now()
+        task=s.get(ReviewTask,task_id);snapshot=json.loads(task.input_snapshot)
+        if row.agent_run_id:snapshot['agent_run_id']=row.agent_run_id
+        if row.source_contract_id:snapshot['oa_contract_id']=row.source_contract_id
+        task.input_snapshot=json.dumps(snapshot,ensure_ascii=False)
+        if row.agent_run_id and row.source_contract_id:
+            from sqlalchemy import update,func
+            from app.models import AgentStep
+            s.execute(update(AgentStep).where(AgentStep.run_id==row.agent_run_id,
+                AgentStep.tool=='review_contract',
+                func.json_extract(AgentStep.args,'$.contract_id')==row.source_contract_id).values(review_task_id=task_id))
+    try:
+        result=create_review(db.SessionLocal,contract_id,rules=list(CLAUSE_RULES),missing_rules=list(MISSING_RULES),
+            created_by=user.id,_on_created=bind,party_stance=stance)
+        if result.get('deduplicated'):raise HTTPException(409,'合同已有活动任务，请稍后重试')
+        return {'task_id':result['task_id'],'status':'reviewing'}
+    except ReviewError as exc:raise HTTPException(exc.status_code,exc.message)
+
 def permitted(user):
     return ticket_visibility(user)
 
@@ -27,16 +75,20 @@ def sync(s,row):
 def serialize(s,row):
     requester=s.get(User,row.requester_id);assignee=s.get(User,row.assignee_id) if row.assignee_id else None
     from app.services.ticket_title import ticket_title
-    return {key:getattr(row,key) for key in ['id','title','conversation_id','contract_id','requester_id','assignee_id','status','priority','raw_request','review_task_id','created_at','updated_at','high_risk_count','needs_human_reason','confirmed_by','confirmed_at','confirmation_note','review_error']} | {'title':ticket_title(s.get(Contract,row.contract_id)),'focus_points':json.loads(row.focus_points),'requester_name':requester.username,'assignee_name':assignee.username if assignee else None}
+    from app.services.party_parser import party_detection
+    contract=s.get(Contract,row.contract_id)
+    return {key:getattr(row,key) for key in ['id','title','conversation_id','contract_id','requester_id','assignee_id','status','priority','raw_request','review_task_id','created_at','updated_at','high_risk_count','needs_human_reason','confirmed_by','confirmed_at','confirmation_note','review_error']} | {'title':ticket_title(contract),'detected_parties':party_detection(contract.raw_text or '',None)['detected_parties'],'focus_points':json.loads(row.focus_points),'requester_name':requester.username,'assignee_name':assignee.username if assignee else None}
 
 def listing(user,status=None):
     with db.SessionLocal.begin() as s:
         # Synchronize completion before filtering, without adding worker coupling.
         rows=list(s.scalars(select(Ticket).where(permitted(user)).order_by(Ticket.created_at.desc(),Ticket.id.desc())))
         for row in rows:sync(s,row)
-        valid={'pending','reviewing','needs_human','done','closed'}
+        valid={'pending','needs_stance','reviewing','needs_human','done','closed'}
         if status and status not in valid:raise HTTPException(422,'不支持的工单状态')
-        return {'tickets':[serialize(s,row) for row in rows if not status or row.status==status]}
+        counts={status:sum(row.status==status for row in rows) for status in valid}
+        rows.sort(key=lambda row:{'needs_stance':0,'needs_human':1}.get(row.status,2))
+        return {'counts':counts,'tickets':[serialize(s,row) for row in rows if not status or row.status==status]}
 
 def detail(key,user):
     with db.SessionLocal.begin() as s:
@@ -81,5 +133,5 @@ def confirm(key,user,note=''):
 def close(key,user):
     with db.SessionLocal.begin() as s:
         s.execute(text('BEGIN IMMEDIATE'));row=visible(s,key,user);sync(s,row)
-        if row.status in {'reviewing','needs_human'}:raise HTTPException(409,'审查执行中或待人工确认，暂不能关闭')
+        if row.status in {'needs_stance','reviewing','needs_human'}:raise HTTPException(409,'待明确立场、审查执行中或待人工确认，暂不能关闭')
         row.status='closed';row.updated_at=utc_now();return serialize(s,row)

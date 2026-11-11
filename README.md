@@ -716,6 +716,22 @@ seed-users 创建 admin/admin、reviewer01/reviewer、reviewer02/reviewer（格�
 
 </details>
 
+### Agent 运行历史
+
+管理员和法务可在「AI 助手 → 历史记录」按状态筛选并查看原时间线。接口 `GET /agent/runs` 支持 `limit`、`status` 和 `created_by`，详情接口为 `GET /agent/runs/{id}`。
+
+升级后可在 API 容器内导入旧记录。迁移脚本支持重跑，原 JSON 保留在 `/data/agent-runs/`。
+
+```powershell
+docker compose --env-file .env.docker exec -T api python scripts/migrate_agent_runs.py
+```
+
+### Agent 法规问答与待明确立场
+
+Agent 合并远端 OA 三个 MCP 工具和本地 review_contract/search_law，无需额外进程。问“违约金上限是多少”走法规检索；要求审合同时优先使用用户明确立场、OA stance、组织匹配。都不明确则创建 needs_stance 工单，法务在工单详情选甲方/乙方后自动审查，批量其他合同继续执行。未知立场不默认甲方，不写回虚构结果。
+
+mock OA 默认三份样本立场为甲/乙/甲；`POST http://localhost:9000/api/reset?clear_stance=C002` 是测试待办的显式开关，默认数据不因此改变。完成的法务待办只有来源、原文、立场、规则和知识库均一致时才复用原任务，结果注明 reused=true 和原 task_id。
+
 ### SQLite 并发与数据目录
 
 本次并发问题的根因判断为“锁等待超时缺失 + 事务持锁时间过长”（基于现象推断，未做对照实验）。正式库原本已是 WAL，WAL 不是本次修复点；真正生效的是 busy_timeout 从 5 秒增至 30 秒及事务边界收紧。“超时缺失”指缺少适合当前负载的等待配置，并非原先完全未设置。恢复期间健康接口和 `/tickets` 各 142 次检测全 200，是修复后可用性的有效证据，不代表已通过对照实验证明根因。详见 `docs/db-concurrency-notes.md`。

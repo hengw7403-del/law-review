@@ -40,7 +40,7 @@ class ContainerSetupTests(unittest.TestCase):
                     initialize();initialize()
                     self.assertEqual(signing_key(),'x'*64)
                     with engine.connect() as c:
-                        self.assertEqual(c.exec_driver_sql("SELECT count(*) FROM sqlite_master WHERE type='table'").scalar_one(),10)
+                        self.assertEqual(c.exec_driver_sql("SELECT count(*) FROM sqlite_master WHERE type='table'").scalar_one(),12)
                         self.assertEqual(c.exec_driver_sql('SELECT count(*) FROM llm_logs').scalar_one(),0)
                     (directory/'heartbeat.json').write_text(json.dumps({'time':time.time(),'pid':123}),encoding='utf-8')
                     with patch('sys.argv',['entrypoint','health-worker']):self.assertEqual(main(),0)

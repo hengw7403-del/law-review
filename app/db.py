@@ -71,6 +71,10 @@ def init_db() -> None:
     add_ticket_tables(engine)
     from app.migrations import ticket_auto_review
     ticket_auto_review(engine)
+    from app.migrations import agent_stance_handoff
+    agent_stance_handoff(engine)
+    from app.migrations import add_agent_tables
+    add_agent_tables(engine)
 
 
 def check_database_ready() -> None:

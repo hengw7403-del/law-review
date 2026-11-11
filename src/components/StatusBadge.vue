@@ -2,6 +2,7 @@
 defineProps({ status: String });
 const labels = {
   pending: "待启动",
+  needs_stance: "需明确立场",
   needs_human: "待人工确认",
   reviewing: "审查中",
   done: "已完成",

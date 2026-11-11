@@ -134,7 +134,7 @@ onMounted(load);
     <div>
       <h2>{{ contract.title }}</h2>
       <span class="badge">{{
-        contract.party_stance === "party_a" ? "甲方" : "乙方"
+        { party_a: '甲方', party_b: '乙方' }[contract.party_stance] || '待明确立场'
       }}</span>
     </div>
     <StatusBadge :status="contract.parse_status" /><small>{{

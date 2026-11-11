@@ -53,7 +53,7 @@ class SchemaTests(unittest.TestCase):
             names = set(actual.exec_driver_sql(
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).scalars())
-            self.assertEqual(names, TABLES | {'conversations','conversation_messages','tickets'})
+            self.assertEqual(names, TABLES | {'conversations','conversation_messages','tickets','agent_runs','agent_steps'})
             for table in sorted(TABLES):
                 with self.subTest(table=table):
                     expected_columns = list(self.reference.execute(
@@ -66,7 +66,8 @@ class SchemaTests(unittest.TestCase):
                     def normalize(rows):
                         # The LLM preview phase explicitly relaxes this one FK;
                         # all other fields remain the original v6 schema.
-                        values = [(r[1], r[2], False if table == "llm_logs" and r[1] == "review_id"
+                        # Agent handoff also permits a NULL stance until legal confirmation.
+                        values = [(r[1], r[2], False if (table == "llm_logs" and r[1] == "review_id") or (table == 'contracts' and r[1] == 'party_stance')
                                    else bool(r[3] or r[5]), r[4], r[5]) for r in rows]
                         if table == "contracts" and not any(v[0] == "preamble" for v in values):
                             values.append(("preamble", "TEXT", False, None, 0))

@@ -88,6 +88,7 @@ class HealthTests(unittest.TestCase):
                 "users", "contracts", "clauses", "knowledge_chunks",
                 "review_tasks", "review_items", "llm_logs",
                 "conversations", "conversation_messages", "tickets",
+                "agent_runs", "agent_steps",
             })
             for table in names:
                 self.assertEqual(connection.execute(

@@ -29,6 +29,11 @@ class OAApiTests(unittest.TestCase):
             self.assertEqual(c.post('/api/reset?count=15').json()['count'],15)
             self.assertEqual(len(c.get('/api/contracts').json()),15)
             self.assertEqual(c.post('/api/reset?count=101').status_code,422)
+            c.post('/api/reset')
+            self.assertEqual([c.get('/api/contracts/'+cid).json()['stance'] for cid in ['C001','C002','C003']],['party_a','party_b','party_a'])
+            c.post('/api/reset?clear_stance=C002')
+            self.assertIsNone(c.get('/api/contracts/C002').json()['stance'])
+            self.assertEqual(c.get('/api/contracts/C001').json()['stance'],'party_a')
 
     def test_content_limit_is_413_not_500(self):
         with patch.object(service,'MAX_CONTENT_BYTES',1):
